@@ -89,8 +89,9 @@ Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configur
   "sbcPythonDependencies": [],
   "sbcData": {
     "referenceRepoUrl": "",
-    "firmwareBranch": "",
-    "autoDetectFirmware": true,
+    "firmwareBranchOverride": "",
+    "detectedFirmwareVersion": "",
+    "activeBranch": "",
     "lastSyncTimestamp": "",
     "status": "not_configured"
   },
@@ -105,8 +106,9 @@ Key changes from earlier draft:
 - **`sbcPermissions`** — file system, network (git fetch), HTTP endpoints, object model access
 - **`sbcData`** — plugin-specific state exposed via the DSF object model
   - `referenceRepoUrl` — the git repo URL for this printer model
-  - `firmwareBranch` — override branch name (empty = auto-detect from firmware version)
-  - `autoDetectFirmware` — if true, read firmware version from object model and use as branch name
+  - `firmwareBranchOverride` — manual override (empty = auto-detect, which is the default)
+  - `detectedFirmwareVersion` — firmware version read from the board (informational)
+  - `activeBranch` — the branch currently checked out (auto-detected or overridden)
 
 ### 1.2 Repository structure
 
@@ -230,12 +232,16 @@ meltingplot-config-mp400.git          # one repo per printer model
 
 ### 2.2 Config resolver
 
-Determines which branch to check out:
+The branch is **automatically selected** from the printer's firmware version. Manual override is only for edge cases.
 
-1. If `autoDetectFirmware` is true, read firmware version from the DSF object model (`boards[0].firmwareVersion`) and use it as the branch name
-2. If `firmwareBranch` is set (manual override), use that instead
-3. `git checkout <resolved-branch>` in the local reference clone
-4. If the exact branch does not exist, list available branches and find the closest match (e.g., `3.5` matches `3.5.1`) — report a warning to the user if no exact match is found
+**Resolution order:**
+
+1. Read firmware version from the DSF object model (`boards[0].firmwareVersion`), store in `detectedFirmwareVersion`
+2. If `firmwareBranchOverride` is set (non-empty), use that instead — this is a manual escape hatch, not the normal path
+3. `git checkout <resolved-branch>` in the local reference clone, update `activeBranch`
+4. If the exact branch does not exist, list available branches and find the closest match (e.g., firmware `3.5.1` with no `3.5.1` branch falls back to `3.5`) — surface a warning to the user
+
+**On firmware update:** When the printer firmware changes, the plugin detects the new version on next status check and automatically switches to the matching branch, triggering a new diff.
 
 ### 2.3 Diff engine
 
@@ -314,9 +320,10 @@ A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks a
 
 Either a settings tab or a section within the main page:
 - Reference repository URL (text field — the repo for this printer model)
-- Firmware branch (auto-detected from firmware version, with manual override option)
-- Auto-sync interval (optional: on boot, daily, manual only)
+- Detected firmware version and active branch (read-only, shows what was auto-selected)
+- Branch override (optional text field — only used when auto-detection doesn't match a branch)
 - Available branches list (fetched from remote, shown as reference)
+- Auto-sync interval (optional: on boot, daily, manual only)
 
 ---
 

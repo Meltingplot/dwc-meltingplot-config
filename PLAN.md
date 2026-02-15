@@ -274,6 +274,7 @@ Compares every file in the reference config set against the printer's current fi
 | `POST` | `/machine/MeltingplotConfig/apply` | Apply reference config (with backup) |
 | `POST` | `/machine/MeltingplotConfig/apply/{file}` | Apply a single file |
 | `GET` | `/machine/MeltingplotConfig/backup/{commitHash}` | View a specific backup snapshot |
+| `GET` | `/machine/MeltingplotConfig/backup/{commitHash}/download` | Download backup as ZIP archive |
 | `POST` | `/machine/MeltingplotConfig/restore/{commitHash}` | Restore from a backup |
 
 ### 2.4 Backup system (git-based)
@@ -314,6 +315,7 @@ A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks a
 - Scrollable list of backup commits (from `GET /backups`)
 - Each entry shows: timestamp, commit message, number of files changed
 - Click to expand and see which files were changed
+- "Download" button per commit — downloads a ZIP of all config files from that snapshot
 - "Restore" button per commit (with confirmation)
 
 ### 3.4 Settings panel

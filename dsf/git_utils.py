@@ -116,6 +116,7 @@ def init_backup_repo(backup_path):
     _run(["init"], cwd=backup_path)
     _run(["config", "user.email", "meltingplot-config@localhost"], cwd=backup_path)
     _run(["config", "user.name", "MeltingplotConfig"], cwd=backup_path)
+    _run(["config", "commit.gpgsign", "false"], cwd=backup_path)
     logger.info("Initialized backup repo at %s", backup_path)
 
 
@@ -167,7 +168,7 @@ def backup_log(backup_path, max_count=50):
         # Count files changed in this commit
         try:
             stat = _run(
-                ["diff-tree", "--no-commit-id", "--name-only", "-r", full_hash],
+                ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full_hash],
                 cwd=backup_path,
             )
             files_changed = len([f for f in stat.splitlines() if f.strip()])

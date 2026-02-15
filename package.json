@@ -1,0 +1,13 @@
+{
+  "name": "dwc-meltingplot-config",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint src/ --ext .js,.vue"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-plugin-vue": "^9.21.0",
+    "vue-eslint-parser": "^9.4.0"
+  }
+}

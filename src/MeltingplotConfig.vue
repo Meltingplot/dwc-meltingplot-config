@@ -114,7 +114,7 @@
                     {{ branch }}
                   </v-chip>
                 </div>
-                <v-btn color="primary" class="mt-4" @click="saveSettings" :loading="savingSettings">
+                <v-btn color="primary" class="mt-4" :loading="savingSettings" @click="saveSettings">
                   Save Settings
                 </v-btn>
               </v-card-text>

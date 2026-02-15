@@ -54,23 +54,27 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 
 ## Testing
 
-No test framework is configured yet. When tests are added, document:
-
-- Test framework (e.g., pytest, unittest)
-- How to run tests
-- Test file naming conventions and directory structure
+- **Framework:** pytest
+- **Run tests:** `pytest tests/ -v` (requires `PYTHONPATH=dsf` or use the `pyproject.toml` config)
+- **Test files:**
+  - `tests/test_git_utils.py` — Git operations (clone, fetch, branches, backup repo)
+  - `tests/test_config_manager.py` — Diff engine, hunk parsing, hunk apply, path conversion, round-trip
+  - `tests/test_daemon.py` — HTTP dispatch, response helpers, route registration (mocks DSF library)
+- **Install:** `pip install pytest`
 
 ## Linting & Formatting
 
-No linting or formatting tools are configured yet. When added, document:
-
-- Linter (e.g., ruff, flake8, eslint)
-- Formatter (e.g., ruff format, black, prettier)
-- Type checker (e.g., mypy, pyright)
+- **Frontend linter:** ESLint 8 with `eslint-plugin-vue` (Vue 2 recommended rules)
+- **Run lint:** `npm run lint`
+- **Config:** `.eslintrc.js`
 
 ## CI/CD
 
-No CI/CD pipelines are configured yet.
+GitHub Actions workflow at `.github/workflows/ci.yml`:
+
+- **Python Tests** — runs `pytest` on Python 3.9, 3.10, 3.11, 3.12
+- **Frontend Lint** — runs `npm run lint` (ESLint) with Node.js 18
+- **Triggers:** push to `main`, pull requests to `main`
 
 ## Key Architecture Decisions
 

@@ -61,8 +61,8 @@
               <v-progress-circular indeterminate size="20" />
             </div>
             <v-chip
-              v-else
               v-for="file in backup.files"
+              v-else
               :key="file"
               small
               outlined

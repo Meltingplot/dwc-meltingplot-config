@@ -79,6 +79,10 @@ Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configur
     "fileSystemAccess",
     "readSystem",
     "writeSystem",
+    "readMacros",
+    "writeMacros",
+    "readFilaments",
+    "writeFilaments",
     "networkAccess",
     "setPluginData"
   ],
@@ -183,7 +187,7 @@ Each printer model has its **own git repository**. Firmware versions are tracked
 meltingplot-config-mp400.git          # one repo per printer model
 ├── branch: main                       # default branch (latest stable)
 ├── branch: 3.5.0                      # firmware version branch
-│   ├── sys/
+│   ├── sys/                           # system config files → 0:/sys/
 │   │   ├── config.g
 │   │   ├── config-override.g
 │   │   ├── homeall.g
@@ -192,9 +196,23 @@ meltingplot-config-mp400.git          # one repo per printer model
 │   │   ├── homez.g
 │   │   ├── bed.g
 │   │   └── ...
+│   ├── macros/                        # macro files → 0:/macros/
+│   │   ├── print_start.g
+│   │   ├── print_end.g
+│   │   └── ...
+│   ├── filaments/                     # filament configs → 0:/filaments/
+│   │   ├── PLA/
+│   │   │   ├── config.g
+│   │   │   ├── load.g
+│   │   │   └── unload.g
+│   │   ├── PETG/
+│   │   │   └── ...
+│   │   └── ...
 │   └── manifest.json                  # optional metadata
 ├── branch: 3.5.1
 │   ├── sys/
+│   ├── macros/
+│   ├── filaments/
 │   │   └── ... (updated configs)
 │   └── manifest.json
 ```
@@ -221,10 +239,18 @@ Determines which branch to check out:
 
 ### 2.3 Diff engine
 
-Compares every file in the reference config set against the printer's current files:
+Compares every file in the reference config set against the printer's current files across all managed directories:
 
-1. List all files in the reference set (e.g., `sys/config.g`, `sys/homeall.g`)
-2. For each file, read the current version from `0:/sys/` via DSF file API
+| Reference directory | Printer path | DSF permission |
+|---------------------|-------------|----------------|
+| `sys/` | `0:/sys/` | `readSystem` / `writeSystem` |
+| `macros/` | `0:/macros/` | `readMacros` / `writeMacros` |
+| `filaments/` | `0:/filaments/` | `readFilaments` / `writeFilaments` |
+
+**Process:**
+
+1. List all files in the reference set across `sys/`, `macros/`, and `filaments/`
+2. For each file, read the current version from the corresponding `0:/` path via DSF file API
 3. Produce a unified diff for each changed file
 4. Categorize: `unchanged`, `modified`, `missing` (exists in reference but not on printer), `extra` (exists on printer but not in reference)
 

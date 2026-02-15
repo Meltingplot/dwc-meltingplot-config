@@ -257,8 +257,9 @@ Compares every file in the reference config set against the printer's current fi
 
 1. List all files in the reference set across `sys/`, `macros/`, and `filaments/`
 2. For each file, read the current version from the corresponding `0:/` path via DSF file API
-3. Produce a unified diff for each changed file
-4. Categorize: `unchanged`, `modified`, `missing` (exists in reference but not on printer), `extra` (exists on printer but not in reference)
+3. Produce a unified diff for each changed file, split into numbered hunks
+4. Each hunk gets an index (0-based) and a human-readable summary (e.g., line range, first changed identifier)
+5. Categorize: `unchanged`, `modified`, `missing` (exists in reference but not on printer), `extra` (exists on printer but not in reference)
 
 **HTTP API endpoints:**
 
@@ -268,16 +269,44 @@ Compares every file in the reference config set against the printer's current fi
 | `POST` | `/machine/MeltingplotConfig/sync` | Trigger git fetch + checkout of reference repo |
 | `GET` | `/machine/MeltingplotConfig/branches` | List available branches (firmware versions) |
 | `GET` | `/machine/MeltingplotConfig/diff` | Full diff: reference branch vs current config |
-| `GET` | `/machine/MeltingplotConfig/diff/{file}` | Diff for a single file |
+| `GET` | `/machine/MeltingplotConfig/diff/{file}` | Diff for a single file (includes indexed hunks) |
 | `GET` | `/machine/MeltingplotConfig/reference` | List reference config files on active branch |
 | `GET` | `/machine/MeltingplotConfig/backups` | List backup commits (git log) |
 | `POST` | `/machine/MeltingplotConfig/apply` | Apply reference config (with backup) |
-| `POST` | `/machine/MeltingplotConfig/apply/{file}` | Apply a single file |
+| `POST` | `/machine/MeltingplotConfig/apply/{file}` | Apply a single file (all hunks) |
+| `POST` | `/machine/MeltingplotConfig/apply/{file}/hunks` | Apply selected hunks only (body: `{"hunks": [0, 2, 5]}`) |
 | `GET` | `/machine/MeltingplotConfig/backup/{commitHash}` | View a specific backup snapshot |
 | `GET` | `/machine/MeltingplotConfig/backup/{commitHash}/download` | Download backup as ZIP archive |
 | `POST` | `/machine/MeltingplotConfig/restore/{commitHash}` | Restore from a backup |
 
-### 2.4 Backup system (git-based)
+### 2.4 Hunk-level partial apply
+
+When the user selects a subset of hunks for a file, the backend applies only those changes:
+
+1. **Diff generation** (`difflib`): Produce a unified diff for the file, then parse it into individual hunks. Each hunk is assigned a 0-based index.
+2. **Selective patch**: Given a list of hunk indices, reconstruct a partial patch containing only the selected hunks (with adjusted line offsets). Apply the patch to the current printer file content in-memory.
+3. **Conflict safety**: Hunks are applied in order from top of file to bottom. If a hunk's context lines don't match the current file (e.g., the file changed since the diff was generated), the apply is rejected for that hunk and the response reports which hunks failed.
+4. **Atomicity**: The backup is created before any writes. If some hunks succeed and others fail, the response clearly lists both, and the user can restore from the backup if needed.
+
+**Diff response format** (from `GET /diff/{file}`):
+
+```json
+{
+  "file": "sys/config.g",
+  "status": "modified",
+  "hunks": [
+    {
+      "index": 0,
+      "header": "@@ -10,7 +10,7 @@",
+      "lines": ["- old line", "+ new line", "  context"],
+      "summary": "Lines 10-16: Motor current settings"
+    }
+  ],
+  "unifiedDiff": "--- a/sys/config.g\n+++ b/sys/config.g\n..."
+}
+```
+
+### 2.5 Backup system (git-based)
 
 A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks all config changes:
 
@@ -308,6 +337,10 @@ A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks a
 - List of changed files with status icons (modified/missing/extra)
 - Click a file to see a side-by-side or unified diff
 - "Apply all" button + per-file "Apply" button
+- **Hunk-level selection:** Each hunk within a file has a checkbox. Users can select a subset of hunks and click "Apply selected" to merge only those changes. Unselected hunks remain as drift.
+  - Hunks are visually separated with a header showing the line range
+  - "Select all" / "Deselect all" toggles per file
+  - The "Apply" button label updates to reflect selection (e.g., "Apply 2 of 5 changes")
 - Confirmation dialog before applying (warns about backup)
 
 ### 3.3 Backup history (`BackupHistory.vue`)
@@ -379,7 +412,7 @@ MeltingplotConfig-0.1.0.zip
 | SBC backend | Python 3 | Runs as DSF plugin process |
 | DSF communication | `dsf-python` library | Unix socket connection to DSF |
 | Git operations | `git` CLI (subprocess) | Available on SBC, no extra deps |
-| Diffing | Python `difflib` | Standard library, unified diffs |
+| Diffing & patching | Python `difflib` | Standard library, unified diffs, hunk-level partial apply |
 | HTTP API | DSF HTTP endpoint registration | Via `registerHttpEndpoints` permission |
 | Config backup | Local git repository | Full history, restore any snapshot |
 

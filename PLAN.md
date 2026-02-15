@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configurations up to date. A **Python SBC backend** fetches reference configurations from a git repository, compares them against the printer's current config, manages backups via git, and exposes an HTTP API. A **DWC frontend** provides the user interface for reviewing drift, applying updates, and browsing backup history.
+Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configurations up to date. A **Python SBC backend** fetches reference configurations from a git repository (one repo per printer model, one branch per firmware version), compares them against the printer's current config, manages backups via a local git repo, and exposes an HTTP API. A **DWC frontend** provides the user interface for reviewing drift, applying updates, and browsing backup history.
 
 ---
 
@@ -44,10 +44,11 @@ Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configur
 
 | Question | Decision |
 |----------|----------|
-| Reference config source | Fetched from a **git repository** (URL configured in plugin settings) |
+| Reference config source | Fetched from a **git repository** — **one repo per printer model**, URL configured in plugin settings |
+| Firmware versioning | **One branch per firmware version** within the printer model's repo |
 | SBC/DSF usage | **Yes** — Python SBC backend handles git operations, diffing, and backups |
 | Scope of configs | **Entire reference bundle** — every config file in the reference package |
-| Versioning | Addresses **both printer model and firmware version** |
+| Versioning | Addresses **both printer model** (repo) **and firmware version** (branch) |
 | Backup strategy | **Git-based** — local git repo tracks all config changes over time |
 
 ---
@@ -84,7 +85,8 @@ Build a **combined DWC + DSF plugin** that keeps Meltingplot 3D printer configur
   "sbcPythonDependencies": [],
   "sbcData": {
     "referenceRepoUrl": "",
-    "printerModel": "",
+    "firmwareBranch": "",
+    "autoDetectFirmware": true,
     "lastSyncTimestamp": "",
     "status": "not_configured"
   },
@@ -98,6 +100,9 @@ Key changes from earlier draft:
 - **`sbcExecutable`** — Python daemon process
 - **`sbcPermissions`** — file system, network (git fetch), HTTP endpoints, object model access
 - **`sbcData`** — plugin-specific state exposed via the DSF object model
+  - `referenceRepoUrl` — the git repo URL for this printer model
+  - `firmwareBranch` — override branch name (empty = auto-detect from firmware version)
+  - `autoDetectFirmware` — if true, read firmware version from object model and use as branch name
 
 ### 1.2 Repository structure
 
@@ -168,44 +173,51 @@ The SBC executable that:
 
 ## Phase 2: SBC Backend — Reference Sync & Diff Engine
 
-### 2.1 Reference repository management
+### 2.1 Reference repository model
 
-The Python backend manages a local clone of the reference config repository.
+Each printer model has its **own git repository**. Firmware versions are tracked as **branches** within that repo.
 
-**Reference repo structure convention** (in the remote git repo):
+**Example:** A printer model "MP-400" with configs for firmware 3.5.0 and 3.5.1:
 
 ```
-reference-configs/
-├── <printer-model>/
-│   ├── <firmware-version>/
-│   │   ├── sys/
-│   │   │   ├── config.g
-│   │   │   ├── config-override.g
-│   │   │   ├── homeall.g
-│   │   │   ├── homex.g
-│   │   │   ├── homey.g
-│   │   │   ├── homez.g
-│   │   │   ├── bed.g
-│   │   │   └── ...
-│   │   └── manifest.json       # metadata: compatible FW range, notes
-│   └── latest -> 3.5.0/        # symlink to latest version
-└── another-model/
-    └── ...
+meltingplot-config-mp400.git          # one repo per printer model
+├── branch: main                       # default branch (latest stable)
+├── branch: 3.5.0                      # firmware version branch
+│   ├── sys/
+│   │   ├── config.g
+│   │   ├── config-override.g
+│   │   ├── homeall.g
+│   │   ├── homex.g
+│   │   ├── homey.g
+│   │   ├── homez.g
+│   │   ├── bed.g
+│   │   └── ...
+│   └── manifest.json                  # optional metadata
+├── branch: 3.5.1
+│   ├── sys/
+│   │   └── ... (updated configs)
+│   └── manifest.json
 ```
+
+**Advantages of this approach:**
+- `git diff 3.5.0..3.5.1` instantly shows what changed between firmware versions
+- Access control is per-repo (per printer model)
+- Clean separation — no deeply nested directory trees
+- Branches can be created from each other, inheriting config and tracking deltas
 
 **Operations:**
-- `git clone` on first run (stored at `/opt/dsf/plugins/MeltingplotConfig/reference/`)
-- `git pull` on manual or scheduled sync
-- Read `manifest.json` to resolve the correct config set for the printer's model + firmware version
+- `git clone <referenceRepoUrl>` on first run (stored at `/opt/dsf/plugins/MeltingplotConfig/reference/`)
+- `git fetch` + `git checkout <branch>` to switch firmware versions
+- `git pull` on manual or scheduled sync to get latest changes for the current branch
 
 ### 2.2 Config resolver
 
-Determines which reference config set to use:
+Determines which branch to check out:
 
-1. Read printer model from `sbcData.printerModel` (configured by user in settings)
-2. Read firmware version from the DSF object model (`boards[0].firmwareVersion`)
-3. Look up `<printer-model>/<firmware-version>/` in the reference repo
-4. If exact version not found, fall back to nearest compatible version (using `manifest.json`)
+1. If `autoDetectFirmware` is true, read firmware version from the DSF object model (`boards[0].firmwareVersion`) and use it as the branch name
+2. If `firmwareBranch` is set (manual override), use that instead
+3. `git checkout <resolved-branch>` in the local reference clone
+4. If the exact branch does not exist, list available branches and find the closest match (e.g., `3.5` matches `3.5.1`) — report a warning to the user if no exact match is found
 
 ### 2.3 Diff engine
 
@@ -220,11 +232,12 @@ Compares every file in the reference config set against the printer's current fi
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/machine/MeltingplotConfig/status` | Sync status, printer model, FW version |
-| `POST` | `/machine/MeltingplotConfig/sync` | Trigger git pull of reference repo |
-| `GET` | `/machine/MeltingplotConfig/diff` | Full diff: reference vs current config |
+| `GET` | `/machine/MeltingplotConfig/status` | Sync status, active branch, FW version |
+| `POST` | `/machine/MeltingplotConfig/sync` | Trigger git fetch + checkout of reference repo |
+| `GET` | `/machine/MeltingplotConfig/branches` | List available branches (firmware versions) |
+| `GET` | `/machine/MeltingplotConfig/diff` | Full diff: reference branch vs current config |
 | `GET` | `/machine/MeltingplotConfig/diff/{file}` | Diff for a single file |
-| `GET` | `/machine/MeltingplotConfig/reference` | List reference config files |
+| `GET` | `/machine/MeltingplotConfig/reference` | List reference config files on active branch |
 | `GET` | `/machine/MeltingplotConfig/backups` | List backup commits (git log) |
 | `POST` | `/machine/MeltingplotConfig/apply` | Apply reference config (with backup) |
 | `POST` | `/machine/MeltingplotConfig/apply/{file}` | Apply a single file |
@@ -252,7 +265,7 @@ A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks a
 
 ### 3.1 Status dashboard (`ConfigStatus.vue`)
 
-- Printer model + firmware version (auto-detected)
+- Firmware version (auto-detected from board) and active reference branch
 - Reference repo URL and last sync time
 - Status badge: "Up to date" / "Updates available" / "Not configured"
 - "Check for updates" button (triggers `POST /sync` then `GET /diff`)
@@ -274,9 +287,10 @@ A local git repository at `/opt/dsf/plugins/MeltingplotConfig/backups/` tracks a
 ### 3.4 Settings panel
 
 Either a settings tab or a section within the main page:
-- Reference repository URL (text field)
-- Printer model (dropdown or text, could auto-populate from board info)
+- Reference repository URL (text field — the repo for this printer model)
+- Firmware branch (auto-detected from firmware version, with manual override option)
 - Auto-sync interval (optional: on boot, daily, manual only)
+- Available branches list (fetched from remote, shown as reference)
 
 ---
 
@@ -314,7 +328,8 @@ MeltingplotConfig-0.1.0.zip
 1. Upload ZIP via **DWC → Settings → Plugins → Install Plugin**
 2. DSF extracts `dsf/` files and starts the daemon
 3. DWC loads the frontend chunk
-4. User configures reference repo URL and printer model in the Settings tab
+4. User configures the reference repo URL (for their printer model) in the Settings tab
+5. Plugin auto-detects firmware version → checks out matching branch → compares configs
 
 ---
 

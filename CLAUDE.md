@@ -54,13 +54,24 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 
 ## Testing
 
+### Backend (Python)
+
 - **Framework:** pytest
-- **Run tests:** `pytest tests/ -v` (requires `PYTHONPATH=dsf` or use the `pyproject.toml` config)
+- **Run:** `pytest tests/ -v` (uses `pyproject.toml` for pythonpath config)
+- **Install:** `pip install pytest`
 - **Test files:**
   - `tests/test_git_utils.py` — Git operations (clone, fetch, branches, backup repo)
   - `tests/test_config_manager.py` — Diff engine, hunk parsing, hunk apply, path conversion, round-trip
   - `tests/test_daemon.py` — HTTP dispatch, response helpers, route registration (mocks DSF library)
-- **Install:** `pip install pytest`
+
+### Frontend (JavaScript)
+
+- **Framework:** Jest 29 + @vue/test-utils 1.x (Vue 2)
+- **Run:** `npm test`
+- **Test files (in `tests/frontend/`):**
+  - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events
+  - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, CSS class logic
+  - `BackupHistory.test.js` — Empty/loading states, backup display, expand/collapse, fetch mocking
 
 ## Linting & Formatting
 
@@ -68,13 +79,21 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 - **Run lint:** `npm run lint`
 - **Config:** `.eslintrc.js`
 
+## Building
+
+- **Build plugin ZIP:** `npm run build`
+- **Output:** `dist/MeltingplotConfig-<version>.zip`
+- **Script:** `scripts/build-zip.js` — packages `plugin.json`, `dsf/*.py`, and `dwc/src/` into an installable ZIP
+
 ## CI/CD
 
-GitHub Actions workflow at `.github/workflows/ci.yml`:
+GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 
-- **Python Tests** — runs `pytest` on Python 3.9, 3.10, 3.11, 3.12
-- **Frontend Lint** — runs `npm run lint` (ESLint) with Node.js 18
-- **Triggers:** push to `main`, pull requests to `main`
+1. **Python Tests** — runs `pytest` on Python 3.9, 3.10, 3.11, 3.12
+2. **Frontend Lint & Tests** — runs `npm run lint` + `npm test` with Node.js 18
+3. **Build** — runs after tests pass, builds plugin ZIP and uploads as artifact (30-day retention)
+
+**Triggers:** push to `main`, pull requests to `main`
 
 ## Key Architecture Decisions
 

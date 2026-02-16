@@ -50,7 +50,10 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test
+        run: npx jest tests/frontend/*.test.js --verbose
+
+      - name: Integration tests
+        run: npx jest tests/frontend/integration/ --verbose
 
   build:
     name: Build Plugin ZIP

@@ -140,9 +140,11 @@ describe('Plugin ZIP structure', () => {
         }
     });
 
-    it('contains the main daemon executable in dsf/', () => {
+    it('contains the main daemon script in dsf/', () => {
         const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'));
-        expect(zipEntries).toContain(`dsf/${pluginJson.sbcExecutable}`);
+        // sbcExecutableArguments holds the script filename when sbcExecutable is python3
+        const script = pluginJson.sbcExecutableArguments || pluginJson.sbcExecutable;
+        expect(zipEntries).toContain(`dsf/${script}`);
     });
 
     it('contains dwc/src/ directory with frontend sources', () => {

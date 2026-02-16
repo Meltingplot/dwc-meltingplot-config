@@ -8,8 +8,8 @@
   "dwcVersion": "3.6",
   "sbcRequired": true,
   "sbcDsfVersion": "3.6",
-  "sbcExecutable": "meltingplot-config-daemon.py",
-  "sbcExecutableArguments": null,
+  "sbcExecutable": "python3",
+  "sbcExecutableArguments": "meltingplot-config-daemon.py",
   "sbcOutputRedirected": true,
   "sbcPermissions": [
     "commandExecution",

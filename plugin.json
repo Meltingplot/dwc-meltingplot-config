@@ -5,9 +5,9 @@
   "version": "0.1.0",
   "license": "LGPL-3.0-or-later",
   "homepage": "https://github.com/Meltingplot/dwc-meltingplot-config",
-  "dwcVersion": "auto",
+  "dwcVersion": "3.6",
   "sbcRequired": true,
-  "sbcDsfVersion": "3.5",
+  "sbcDsfVersion": "3.6",
   "sbcExecutable": "meltingplot-config-daemon.py",
   "sbcExecutableArguments": null,
   "sbcOutputRedirected": true,
@@ -23,8 +23,7 @@
     "writeMacros",
     "readFilaments",
     "writeFilaments",
-    "networkAccess",
-    "setPluginData"
+    "networkAccess"
   ],
   "sbcPythonDependencies": [],
   "sbcData": {

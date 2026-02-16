@@ -38,9 +38,7 @@
                 <v-icon x-small class="mr-1">mdi-file-multiple</v-icon>
                 {{ backup.filesChanged }} file{{ backup.filesChanged !== 1 ? 's' : '' }}
               </span>
-              <span class="ml-2 caption">
-                {{ backup.hash.substring(0, 8) }}
-              </span>
+              <span class="ml-2 caption">{{ backup.hash.substring(0, 8) }}</span>
             </v-list-item-subtitle>
           </v-list-item-content>
 
@@ -54,7 +52,6 @@
           </v-list-item-action>
         </v-list-item>
 
-        <!-- Expanded detail: files in this backup -->
         <v-expand-transition :key="backup.hash + '-detail'">
           <div v-if="backup.expanded" class="px-8 pb-4">
             <div v-if="backup.loadingFiles" class="text-center pa-2">

@@ -2,14 +2,28 @@
 
 import logging
 import os
+import shutil
 import subprocess
 
 logger = logging.getLogger("MeltingplotConfig")
 
+# Resolve the full path to the git binary at import time.
+# DSF plugin processes run in a virtualenv whose PATH may not include
+# /usr/bin, so a bare "git" lookup can fail with FileNotFoundError.
+GIT_BIN = shutil.which("git")
+if GIT_BIN is None:
+    for _candidate in ("/usr/bin/git", "/usr/local/bin/git", "/bin/git"):
+        if os.path.isfile(_candidate) and os.access(_candidate, os.X_OK):
+            GIT_BIN = _candidate
+            break
+if GIT_BIN is None:
+    GIT_BIN = "git"  # last resort — will fail with a clear error at runtime
+    logger.warning("Could not locate git binary; commands will likely fail")
+
 
 def _run(args, cwd=None):
     """Run a git command and return stdout."""
-    cmd = ["git"] + args
+    cmd = [GIT_BIN] + args
     logger.debug("Running: %s (cwd=%s)", " ".join(cmd), cwd)
     result = subprocess.run(
         cmd,
@@ -125,7 +139,7 @@ def backup_commit(backup_path, message):
     _run(["add", "-A"], cwd=backup_path)
     # Check if there's anything to commit
     result = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"],
+        [GIT_BIN, "diff", "--cached", "--quiet"],
         cwd=backup_path,
         capture_output=True,
     )
@@ -198,7 +212,7 @@ def backup_file_content(backup_path, commit_hash, file_path):
 
 def backup_archive(backup_path, commit_hash):
     """Create a ZIP archive of a backup commit. Returns bytes."""
-    cmd = ["git", "archive", "--format=zip", commit_hash]
+    cmd = [GIT_BIN, "archive", "--format=zip", commit_hash]
     result = subprocess.run(
         cmd,
         cwd=backup_path,

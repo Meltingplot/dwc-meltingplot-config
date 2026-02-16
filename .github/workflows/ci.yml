@@ -5,6 +5,12 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      duetwebcontrol_ref:
+        description: 'DuetWebControl branch/tag to build against (default: v3.6-dev)'
+        required: false
+        default: ''
 
 jobs:
   python-tests:
@@ -61,23 +67,34 @@ jobs:
     needs: [python-tests, frontend-tests]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Checkout DuetWebControl
+        uses: actions/checkout@v4
+        with:
+          repository: Duet3D/DuetWebControl
+          ref: ${{ github.event.inputs.duetwebcontrol_ref || 'v3.6-dev' }}
+          path: DuetWebControl
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "18"
-          cache: "npm"
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install DWC dependencies
+        working-directory: DuetWebControl
+        run: npm install
 
-      - name: Build ZIP
-        run: npm run build
+      - name: Build plugin
+        working-directory: DuetWebControl
+        run: npm run build-plugin ../plugin/src
 
       - name: Upload plugin ZIP
         uses: actions/upload-artifact@v4
         with:
           name: MeltingplotConfig-plugin
-          path: dist/*.zip
+          path: DuetWebControl/dist/MeltingplotConfig-*.zip
           retention-days: 30

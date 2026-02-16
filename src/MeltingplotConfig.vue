@@ -26,7 +26,6 @@
           </v-tabs>
 
           <v-tabs-items v-model="activeTab">
-            <!-- Status tab -->
             <v-tab-item key="status">
               <config-status
                 :status="pluginData.status"
@@ -39,7 +38,6 @@
               />
             </v-tab-item>
 
-            <!-- Changes tab -->
             <v-tab-item key="changes">
               <config-diff
                 :files="diffFiles"
@@ -50,7 +48,6 @@
               />
             </v-tab-item>
 
-            <!-- History tab -->
             <v-tab-item key="history">
               <backup-history
                 :backups="backups"
@@ -61,7 +58,6 @@
               />
             </v-tab-item>
 
-            <!-- Settings tab -->
             <v-tab-item key="settings">
               <v-card-text>
                 <v-text-field
@@ -124,7 +120,6 @@
       </v-col>
     </v-row>
 
-    <!-- Confirmation dialog -->
     <v-dialog v-model="confirmDialog.show" max-width="500">
       <v-card>
         <v-card-title>{{ confirmDialog.title }}</v-card-title>
@@ -137,7 +132,6 @@
       </v-card>
     </v-dialog>
 
-    <!-- Snackbar for notifications -->
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000">
       {{ snackbar.text }}
       <template #action="{ attrs }">

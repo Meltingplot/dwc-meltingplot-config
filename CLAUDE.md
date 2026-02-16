@@ -9,7 +9,7 @@
 ```
 dwc-meltingplot-config/
 ├── plugin.json                        # DWC+DSF plugin manifest
-├── src/                               # DWC frontend (Vue 2 + Vuetify 2)
+├── src/                               # DWC frontend (Vue 2.7 + Vuetify 2.7)
 │   ├── index.js                       # Entry point — registers route under Plugins menu
 │   ├── MeltingplotConfig.vue          # Main page: tabs for Status/Changes/History/Settings
 │   └── components/
@@ -28,25 +28,26 @@ dwc-meltingplot-config/
 
 ## Language & Ecosystem
 
-- **Frontend:** Vue.js 2.7 + Vuetify 2.7 (required by DWC stable branch)
+- **Frontend:** Vue.js 2.7 + Vuetify 2.7 (DWC 3.6 uses Vue 2.7 + Vuetify 2.7 + Vuex 3)
 - **Backend:** Python 3 (runs as DSF SBC plugin process)
-- **State management:** Vuex (machine model via `machine/model` store)
+- **State management:** Vuex 3 (machine model via `machine/model` store)
 - **Bundler:** Webpack (Vue CLI 5) via DWC's `build-plugin` script
 - **DSF communication:** `dsf-python` library (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
 - **Git operations:** `git` CLI via subprocess
 - **Diffing/patching:** Python `difflib` (standard library)
+- **Target DWC version:** 3.6 (`v3.6-dev` branch of Duet3D/DuetWebControl)
 
 ## Development Setup
 
 ### Building the frontend
 
 ```bash
-git clone https://github.com/Duet3D/DuetWebControl.git
+git clone -b v3.6-dev https://github.com/Duet3D/DuetWebControl.git
 cd DuetWebControl && npm install
-npm run build-plugin /path/to/dwc-meltingplot-config
+npm run build-plugin /path/to/dwc-meltingplot-config/src
 ```
 
-Output: `dist/MeltingplotConfig-0.1.0.zip`
+Output: `dist/MeltingplotConfig-<version>.zip`
 
 ### Backend
 
@@ -73,6 +74,11 @@ The Python backend requires no build step. It runs on the SBC under DSF.
   - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events
   - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, CSS class logic
   - `BackupHistory.test.js` — Empty/loading states, backup display, expand/collapse, fetch mocking
+- **Integration tests (in `tests/frontend/integration/`):**
+  - `full-mount.test.js` — Full component tree with real Vuetify
+  - `plugin-registration.test.js` — DWC plugin registration contract
+  - `plugin-structure.test.js` — Plugin ZIP structure validation
+  - `user-flows.test.js` — End-to-end user flows with mock backend
 
 ## Linting & Formatting
 
@@ -82,9 +88,9 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 
 ## Building
 
-- **Build plugin ZIP:** `npm run build`
-- **Output:** `dist/MeltingplotConfig-<version>.zip`
-- **Script:** `scripts/build-zip.js` — packages `plugin.json`, `dsf/*.py`, and `dwc/src/` into an installable ZIP
+The plugin is built via DWC's `build-plugin` command, which compiles Vue components with webpack and packages everything into an installable ZIP. The CI workflow handles this automatically.
+
+For local development, a standalone `scripts/build-zip.js` packages source files into a ZIP for structure validation.
 
 ## CI/CD
 
@@ -92,14 +98,15 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 
 1. **Python Tests** — runs `pytest` on Python 3.9, 3.10, 3.11, 3.12
 2. **Frontend Lint & Tests** — runs `npm run lint` + `npm test` with Node.js 18
-3. **Build** — runs after tests pass, builds plugin ZIP and uploads as artifact (30-day retention)
+3. **Build** — checks out DuetWebControl `v3.6-dev`, runs `build-plugin`, uploads artifact (30-day retention)
 
-**Triggers:** push to `main`/`master`, pull requests to `main`/`master`
+**Triggers:** push to `main`/`master`, pull requests to `main`/`master`, manual `workflow_dispatch` with optional DWC ref override.
 
 ## Key Architecture Decisions
 
 | Decision | Choice |
 |----------|--------|
+| Target DWC version | 3.6 (`v3.6-dev` branch — Vue 2.7 + Vuetify 2.7) |
 | Reference config source | Git repo — one repo per printer model |
 | Firmware versioning | One branch per firmware version |
 | Backend runtime | Python SBC daemon via DSF (venv with `sbcPythonDependencies`) |
@@ -130,7 +137,7 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 
 ## Conventions for AI Assistants
 
-- Frontend: Vue 2 + Vuetify 2 conventions. Use `v-model`, `$set` for reactivity, `mapState` for Vuex.
+- Frontend: Vue 2.7 + Vuetify 2.7 conventions (DWC 3.6). Use `v-model`, `$set` for reactivity, `mapState`/`mapGetters` for Vuex.
 - Backend: Follow PEP 8 / PEP 257. Use `logging` module, not print.
 - Prefer editing existing files over creating new ones.
 - Do not add unnecessary abstractions or over-engineer solutions.

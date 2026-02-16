@@ -90,7 +90,10 @@ jobs:
 
       - name: Build plugin
         working-directory: DuetWebControl
-        run: npm run build-plugin ../plugin/src
+        run: npm run build-plugin ../plugin
+
+      - name: Verify build output
+        run: ls DuetWebControl/dist/MeltingplotConfig-*.zip
 
       - name: Upload plugin ZIP
         uses: actions/upload-artifact@v4

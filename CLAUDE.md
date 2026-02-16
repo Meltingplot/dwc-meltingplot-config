@@ -44,7 +44,7 @@ dwc-meltingplot-config/
 ```bash
 git clone -b v3.6-dev https://github.com/Duet3D/DuetWebControl.git
 cd DuetWebControl && npm install
-npm run build-plugin /path/to/dwc-meltingplot-config/src
+npm run build-plugin /path/to/dwc-meltingplot-config
 ```
 
 Output: `dist/MeltingplotConfig-<version>.zip`

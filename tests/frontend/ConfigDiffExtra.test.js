@@ -37,7 +37,7 @@ describe('ConfigDiff — loadFileDetail', () => {
 
             expect(global.fetch).toHaveBeenCalledTimes(1);
             const url = global.fetch.mock.calls[0][0];
-            expect(url).toContain('/diff/');
+            expect(url).toContain('/diff?file=');
             expect(url).toContain('sys%2Fconfig.g');
 
             expect(file.hunks).toHaveLength(2);

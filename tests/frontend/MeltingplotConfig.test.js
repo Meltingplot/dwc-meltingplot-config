@@ -370,9 +370,9 @@ describe('MeltingplotConfig', () => {
             await wrapper.vm.confirmDialog.action();
 
             // Find the apply call among all fetch calls
-            const applyCalls = global.fetch.mock.calls.filter(c => c[0].includes('/apply/'));
+            const applyCalls = global.fetch.mock.calls.filter(c => c[0].includes('/apply?file='));
             expect(applyCalls.length).toBeGreaterThan(0);
-            expect(applyCalls[0][0]).toContain('/apply/sys%2Fconfig.g');
+            expect(applyCalls[0][0]).toContain('/apply?file=sys%2Fconfig.g');
         });
     });
 
@@ -451,7 +451,7 @@ describe('MeltingplotConfig', () => {
             window.open = jest.fn();
             wrapper.vm.downloadBackup('abc123');
             expect(window.open).toHaveBeenCalledWith(
-                expect.stringContaining('/backup/abc123/download'),
+                expect.stringContaining('/backupDownload?hash=abc123'),
                 '_blank'
             );
         });

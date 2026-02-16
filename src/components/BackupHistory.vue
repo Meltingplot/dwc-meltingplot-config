@@ -100,7 +100,7 @@ export default {
       if (backup.files) return
       this.$set(backup, 'loadingFiles', true)
       try {
-        const response = await fetch(`${API_BASE}/backup/${encodeURIComponent(backup.hash)}`)
+        const response = await fetch(`${API_BASE}/backup?hash=${encodeURIComponent(backup.hash)}`)
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
         this.$set(backup, 'files', data.files || [])

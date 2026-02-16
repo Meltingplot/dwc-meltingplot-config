@@ -12,6 +12,41 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DIST_DIR = path.join(ROOT, 'dist');
 
+// Complete list of valid SBC permissions from DSF 3.6 SbcPermissions enum.
+// Source: DuetSoftwareFramework/src/DuetAPI/Utility/SbcPermissions.cs (v3.6-dev)
+const VALID_SBC_PERMISSIONS = new Set([
+    'none',
+    'commandExecution',
+    'codeInterceptionRead',
+    'codeInterceptionReadWrite',
+    'managePlugins',
+    'servicePlugins',
+    'manageUserSessions',
+    'objectModelRead',
+    'objectModelReadWrite',
+    'registerHttpEndpoints',
+    'readFilaments',
+    'writeFilaments',
+    'readFirmware',
+    'writeFirmware',
+    'readGCodes',
+    'writeGCodes',
+    'readMacros',
+    'writeMacros',
+    'readMenu',
+    'writeMenu',
+    'readSystem',
+    'writeSystem',
+    'readWeb',
+    'writeWeb',
+    'fileSystemAccess',
+    'launchProcesses',
+    'networkAccess',
+    'webcamAccess',
+    'gpioAccess',
+    'superUser',
+]);
+
 let zipPath;
 let zipEntries;
 
@@ -32,6 +67,56 @@ beforeAll(() => {
         .filter(line => /\d{4}-\d{2}-\d{2}/.test(line))
         .map(line => line.trim().split(/\s+/).slice(3).join(' '))
         .filter(Boolean);
+});
+
+describe('Plugin manifest validation (DWC 3.6 compatibility)', () => {
+    let manifest;
+
+    beforeAll(() => {
+        manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'));
+    });
+
+    it('id is non-empty, max 32 chars, only allowed characters', () => {
+        expect(manifest.id).toBeTruthy();
+        expect(manifest.id.length).toBeLessThanOrEqual(32);
+        expect(manifest.id).toMatch(/^[a-zA-Z0-9 .\-_]+$/);
+    });
+
+    it('name is non-empty, max 64 chars, only allowed characters', () => {
+        expect(manifest.name).toBeTruthy();
+        expect(manifest.name.length).toBeLessThanOrEqual(64);
+        expect(manifest.name).toMatch(/^[a-zA-Z0-9 .\-_]+$/);
+    });
+
+    it('author is non-empty', () => {
+        expect(manifest.author).toBeTruthy();
+        expect(manifest.author.trim().length).toBeGreaterThan(0);
+    });
+
+    it('version is a valid semver-like string', () => {
+        expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
+    it('every sbcPermission is a valid DSF 3.6 SbcPermission enum value', () => {
+        expect(manifest.sbcPermissions).toBeDefined();
+        expect(Array.isArray(manifest.sbcPermissions)).toBe(true);
+
+        const invalid = manifest.sbcPermissions.filter(p => !VALID_SBC_PERMISSIONS.has(p));
+        expect(invalid).toEqual([]);
+    });
+
+    it('dwcVersion is null or a valid version string (not "auto")', () => {
+        if (manifest.dwcVersion !== null && manifest.dwcVersion !== undefined) {
+            // Must look like a version number, not a word like "auto"
+            expect(manifest.dwcVersion).toMatch(/^\d+(\.\d+)*$/);
+        }
+    });
+
+    it('sbcDsfVersion is null or a valid version string', () => {
+        if (manifest.sbcDsfVersion !== null && manifest.sbcDsfVersion !== undefined) {
+            expect(manifest.sbcDsfVersion).toMatch(/^\d+(\.\d+)*$/);
+        }
+    });
 });
 
 describe('Plugin ZIP structure', () => {

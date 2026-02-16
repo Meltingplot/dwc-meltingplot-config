@@ -93,7 +93,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 2. **Frontend Lint & Tests** — runs `npm run lint` + `npm test` with Node.js 18
 3. **Build** — runs after tests pass, builds plugin ZIP and uploads as artifact (30-day retention)
 
-**Triggers:** push to `main`, pull requests to `main`
+**Triggers:** push to `main`/`master`, pull requests to `main`/`master`
 
 ## Key Architecture Decisions
 

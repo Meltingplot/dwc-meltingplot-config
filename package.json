@@ -5,6 +5,8 @@
   "scripts": {
     "lint": "eslint src/ --ext .js,.vue",
     "test": "jest --verbose",
+    "test:unit": "jest tests/frontend/*.test.js --verbose",
+    "test:integration": "jest tests/frontend/integration/ --verbose",
     "build": "node scripts/build-zip.js"
   },
   "devDependencies": {
@@ -22,6 +24,7 @@
     "vue": "^2.7.16",
     "vue-eslint-parser": "^9.4.0",
     "vue-template-compiler": "^2.7.16",
-    "vuetify": "^2.7.2"
+    "vuetify": "^2.7.2",
+    "vuex": "^3.6.2"
   }
 }

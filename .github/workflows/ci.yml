@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       duetwebcontrol_ref:
-        description: 'DuetWebControl branch/tag to build against (default: v3.5-dev)'
+        description: 'DuetWebControl branch/tag to build against (default: v3.6-dev)'
         required: false
         default: ''
 
@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Duet3D/DuetWebControl
-          ref: ${{ github.event.inputs.duetwebcontrol_ref || 'v3.5-dev' }}
+          ref: ${{ github.event.inputs.duetwebcontrol_ref || 'v3.6-dev' }}
           path: DuetWebControl
 
       - name: Set up Node.js

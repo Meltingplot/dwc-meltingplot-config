@@ -14,7 +14,6 @@
     </div>
 
     <div v-else>
-      <!-- Summary bar -->
       <v-toolbar flat dense class="mb-4">
         <v-chip small class="mr-2" color="warning" outlined>
           {{ changedFiles.length }} file{{ changedFiles.length !== 1 ? 's' : '' }} changed
@@ -26,12 +25,8 @@
         </v-btn>
       </v-toolbar>
 
-      <!-- File list -->
       <v-expansion-panels v-model="expandedPanels" multiple>
-        <v-expansion-panel
-          v-for="file in changedFiles"
-          :key="file.file"
-        >
+        <v-expansion-panel v-for="file in changedFiles" :key="file.file">
           <v-expansion-panel-header @click="loadFileDetail(file)">
             <div class="d-flex align-center">
               <v-icon small :color="fileStatusColor(file.status)" class="mr-2">
@@ -53,7 +48,6 @@
             </div>
 
             <div v-else-if="file.hunks && file.hunks.length > 0">
-              <!-- Hunk controls -->
               <v-toolbar flat dense class="mb-2">
                 <v-btn x-small text @click="selectAllHunks(file)">Select all</v-btn>
                 <v-btn x-small text @click="deselectAllHunks(file)">Deselect all</v-btn>
@@ -67,34 +61,17 @@
                   <v-icon left small>mdi-check</v-icon>
                   Apply {{ selectedHunkCount(file) }} of {{ file.hunks.length }} changes
                 </v-btn>
-                <v-btn
-                  v-else
-                  small
-                  color="primary"
-                  @click="$emit('apply-file', file.file)"
-                >
+                <v-btn v-else small color="primary" @click="$emit('apply-file', file.file)">
                   <v-icon left small>mdi-check</v-icon>
                   Apply File
                 </v-btn>
               </v-toolbar>
 
-              <!-- Individual hunks -->
-              <div
-                v-for="hunk in file.hunks"
-                :key="hunk.index"
-                class="hunk-block mb-3"
-              >
+              <div v-for="hunk in file.hunks" :key="hunk.index" class="hunk-block mb-3">
                 <div class="hunk-header d-flex align-center pa-2">
-                  <v-checkbox
-                    v-model="hunk.selected"
-                    dense
-                    hide-details
-                    class="mt-0 pt-0 mr-2"
-                  />
+                  <v-checkbox v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
                   <code class="hunk-range">{{ hunk.header }}</code>
-                  <span v-if="hunk.summary" class="ml-2 caption grey--text">
-                    {{ hunk.summary }}
-                  </span>
+                  <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
                 </div>
                 <pre class="hunk-content pa-2"><code
                   v-for="(line, i) in hunk.lines"
@@ -104,7 +81,6 @@
               </div>
             </div>
 
-            <!-- Missing / extra file — no hunks, just status -->
             <div v-else-if="file.status === 'missing'" class="pa-4">
               <v-alert type="info" dense outlined>
                 This file exists in the reference config but not on the printer.

@@ -12,4 +12,4 @@ registerRoute(MeltingplotConfig, {
             path: '/MeltingplotConfig'
         }
     }
-});
+})

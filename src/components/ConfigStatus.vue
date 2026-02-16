@@ -9,9 +9,7 @@
             </v-list-item-icon>
             <v-list-item-content>
               <v-list-item-title>Firmware Version</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ firmwareVersion || 'Not detected' }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ firmwareVersion || 'Not detected' }}</v-list-item-subtitle>
             </v-list-item-content>
           </v-list-item>
 
@@ -21,9 +19,7 @@
             </v-list-item-icon>
             <v-list-item-content>
               <v-list-item-title>Active Branch</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ activeBranch || 'None' }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ activeBranch || 'None' }}</v-list-item-subtitle>
             </v-list-item-content>
           </v-list-item>
 
@@ -33,9 +29,7 @@
             </v-list-item-icon>
             <v-list-item-content>
               <v-list-item-title>Reference Repository</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ repoUrl || 'Not configured' }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ repoUrl || 'Not configured' }}</v-list-item-subtitle>
             </v-list-item-content>
           </v-list-item>
 
@@ -45,31 +39,19 @@
             </v-list-item-icon>
             <v-list-item-content>
               <v-list-item-title>Last Sync</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ lastSync || 'Never' }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ lastSync || 'Never' }}</v-list-item-subtitle>
             </v-list-item-content>
           </v-list-item>
         </v-list>
       </v-col>
 
       <v-col cols="12" md="6" class="d-flex flex-column align-center justify-center">
-        <v-chip
-          :color="statusColor"
-          text-color="white"
-          large
-          class="mb-4"
-        >
+        <v-chip :color="statusColor" text-color="white" large class="mb-4">
           <v-icon left>{{ statusIcon }}</v-icon>
           {{ statusLabel }}
         </v-chip>
 
-        <v-btn
-          color="primary"
-          :loading="syncing"
-          :disabled="!repoUrl"
-          @click="$emit('check-updates')"
-        >
+        <v-btn color="primary" :loading="syncing" :disabled="!repoUrl" @click="$emit('check-updates')">
           <v-icon left>mdi-refresh</v-icon>
           Check for Updates
         </v-btn>

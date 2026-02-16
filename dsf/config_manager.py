@@ -1,0 +1,494 @@
+"""Core logic for the Meltingplot Config plugin: sync, diff, apply, hunks."""
+
+import difflib
+import logging
+import os
+import re
+import shutil
+from datetime import datetime, timezone
+
+from git_utils import (
+    backup_archive,
+    backup_commit,
+    backup_file_content,
+    backup_files_at,
+    backup_log,
+    checkout,
+    clone,
+    current_branch,
+    fetch,
+    find_closest_branch,
+    init_backup_repo,
+    list_files,
+    list_remote_branches,
+    pull,
+)
+
+logger = logging.getLogger("MeltingplotConfig")
+
+PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
+REFERENCE_DIR = os.path.join(PLUGIN_DIR, "reference")
+BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
+
+# Directories in the reference repo and their corresponding printer paths
+MANAGED_DIRS = {
+    "sys/": "0:/sys/",
+    "macros/": "0:/macros/",
+    "filaments/": "0:/filaments/",
+}
+
+
+class ConfigManager:
+    """Manages reference sync, diffing, applying, and backups."""
+
+    def __init__(self, dsf_command_connection=None):
+        self._dsf = dsf_command_connection
+        init_backup_repo(BACKUP_DIR)
+
+    # --- File I/O via DSF ---
+
+    def _read_printer_file(self, printer_path):
+        """Read a file from the printer via DSF file API."""
+        if self._dsf is None:
+            raise RuntimeError("No DSF connection")
+        try:
+            return self._dsf.get_file(printer_path)
+        except Exception as exc:
+            logger.debug("Cannot read %s: %s", printer_path, exc)
+            return None
+
+    def _write_printer_file(self, printer_path, content):
+        """Write a file to the printer via DSF file API."""
+        if self._dsf is None:
+            raise RuntimeError("No DSF connection")
+        self._dsf.put_file(printer_path, content)
+
+    def _read_reference_file(self, rel_path):
+        """Read a file from the local reference repository."""
+        full_path = os.path.join(REFERENCE_DIR, rel_path)
+        if not os.path.isfile(full_path):
+            return None
+        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+
+    @staticmethod
+    def _ref_to_printer_path(ref_path):
+        """Convert a reference repo path to a printer path.
+
+        e.g., 'sys/config.g' -> '0:/sys/config.g'
+        """
+        for ref_prefix, printer_prefix in MANAGED_DIRS.items():
+            if ref_path.startswith(ref_prefix):
+                return printer_prefix + ref_path[len(ref_prefix) :]
+        return None
+
+    # --- Sync ---
+
+    def sync(self, repo_url, firmware_version, branch_override=""):
+        """Sync the reference repository and select the correct branch.
+
+        Returns a status dict.
+        """
+        if not repo_url:
+            return {"error": "No reference repository URL configured"}
+
+        clone(repo_url, REFERENCE_DIR)
+        fetch(REFERENCE_DIR)
+
+        target_branch = branch_override or firmware_version
+        if not target_branch:
+            return {"error": "No firmware version detected and no branch override set"}
+
+        branch, exact = find_closest_branch(REFERENCE_DIR, target_branch)
+        if branch is None:
+            return {
+                "error": f"No matching branch found for '{target_branch}'",
+                "branches": list_remote_branches(REFERENCE_DIR),
+            }
+
+        checkout(REFERENCE_DIR, branch)
+        pull(REFERENCE_DIR)
+
+        warning = None
+        if not exact:
+            warning = (
+                f"Exact branch '{target_branch}' not found, "
+                f"using closest match '{branch}'"
+            )
+
+        return {
+            "activeBranch": branch,
+            "exact": exact,
+            "warning": warning,
+            "branches": list_remote_branches(REFERENCE_DIR),
+        }
+
+    def get_branches(self):
+        """List available remote branches."""
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return []
+        return list_remote_branches(REFERENCE_DIR)
+
+    def get_active_branch(self):
+        """Get the currently checked-out branch."""
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return ""
+        return current_branch(REFERENCE_DIR)
+
+    # --- Diffing ---
+
+    def diff_all(self):
+        """Compare all reference files against current printer files.
+
+        Returns a list of file diffs.
+        """
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return []
+
+        ref_files = list_files(REFERENCE_DIR)
+        results = []
+
+        for ref_path in ref_files:
+            printer_path = self._ref_to_printer_path(ref_path)
+            if printer_path is None:
+                continue
+
+            ref_content = self._read_reference_file(ref_path)
+            printer_content = self._read_printer_file(printer_path)
+
+            if printer_content is None:
+                results.append(
+                    {
+                        "file": ref_path,
+                        "printerPath": printer_path,
+                        "status": "missing",
+                        "hunks": [],
+                    }
+                )
+            elif ref_content == printer_content:
+                results.append(
+                    {
+                        "file": ref_path,
+                        "printerPath": printer_path,
+                        "status": "unchanged",
+                        "hunks": [],
+                    }
+                )
+            else:
+                hunks = self._compute_hunks(ref_path, printer_content, ref_content)
+                results.append(
+                    {
+                        "file": ref_path,
+                        "printerPath": printer_path,
+                        "status": "modified",
+                        "hunks": [
+                            {"index": h["index"], "header": h["header"]}
+                            for h in hunks
+                        ],
+                    }
+                )
+
+        return results
+
+    def diff_file(self, ref_path):
+        """Get detailed diff for a single file, with indexed hunks.
+
+        Returns the full diff response format specified in the plan.
+        """
+        printer_path = self._ref_to_printer_path(ref_path)
+        if printer_path is None:
+            return {"error": f"Unknown reference path: {ref_path}"}
+
+        ref_content = self._read_reference_file(ref_path)
+        printer_content = self._read_printer_file(printer_path)
+
+        if ref_content is None:
+            return {"file": ref_path, "status": "not_in_reference"}
+
+        if printer_content is None:
+            return {
+                "file": ref_path,
+                "status": "missing",
+                "hunks": [],
+                "unifiedDiff": "",
+            }
+
+        if ref_content == printer_content:
+            return {
+                "file": ref_path,
+                "status": "unchanged",
+                "hunks": [],
+                "unifiedDiff": "",
+            }
+
+        hunks = self._compute_hunks(ref_path, printer_content, ref_content)
+        unified = difflib.unified_diff(
+            printer_content.splitlines(keepends=True),
+            ref_content.splitlines(keepends=True),
+            fromfile=f"a/{ref_path}",
+            tofile=f"b/{ref_path}",
+        )
+
+        return {
+            "file": ref_path,
+            "status": "modified",
+            "hunks": hunks,
+            "unifiedDiff": "".join(unified),
+        }
+
+    @staticmethod
+    def _compute_hunks(ref_path, current_content, reference_content):
+        """Parse a unified diff into indexed hunks with summaries."""
+        diff_lines = list(
+            difflib.unified_diff(
+                current_content.splitlines(keepends=True),
+                reference_content.splitlines(keepends=True),
+                fromfile=f"a/{ref_path}",
+                tofile=f"b/{ref_path}",
+                n=3,
+            )
+        )
+
+        hunks = []
+        current_hunk = None
+        hunk_index = 0
+
+        for line in diff_lines:
+            if line.startswith("@@"):
+                if current_hunk is not None:
+                    current_hunk["summary"] = _hunk_summary(current_hunk)
+                    hunks.append(current_hunk)
+                current_hunk = {
+                    "index": hunk_index,
+                    "header": line.rstrip("\n"),
+                    "lines": [],
+                    "summary": "",
+                }
+                hunk_index += 1
+            elif current_hunk is not None:
+                current_hunk["lines"].append(line.rstrip("\n"))
+
+        if current_hunk is not None:
+            current_hunk["summary"] = _hunk_summary(current_hunk)
+            hunks.append(current_hunk)
+
+        return hunks
+
+    # --- Applying ---
+
+    def apply_all(self):
+        """Apply all reference config files to the printer (with backup)."""
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return {"error": "Reference repository not cloned"}
+
+        self._create_backup("Pre-update backup")
+        ref_files = list_files(REFERENCE_DIR)
+        applied = []
+
+        for ref_path in ref_files:
+            printer_path = self._ref_to_printer_path(ref_path)
+            if printer_path is None:
+                continue
+            ref_content = self._read_reference_file(ref_path)
+            if ref_content is not None:
+                self._write_printer_file(printer_path, ref_content)
+                applied.append(ref_path)
+
+        branch = self.get_active_branch()
+        self._create_backup(f"Applied reference {branch}")
+        return {"applied": applied}
+
+    def apply_file(self, ref_path):
+        """Apply a single reference file to the printer (with backup)."""
+        printer_path = self._ref_to_printer_path(ref_path)
+        if printer_path is None:
+            return {"error": f"Unknown reference path: {ref_path}"}
+
+        ref_content = self._read_reference_file(ref_path)
+        if ref_content is None:
+            return {"error": f"Reference file not found: {ref_path}"}
+
+        self._create_backup(f"Pre-update backup for {ref_path}")
+        self._write_printer_file(printer_path, ref_content)
+        self._create_backup(f"Applied {ref_path}")
+        return {"applied": [ref_path]}
+
+    def apply_hunks(self, ref_path, hunk_indices):
+        """Apply selected hunks from a file diff (with backup).
+
+        Returns dict with 'applied' and 'failed' hunk indices.
+        """
+        printer_path = self._ref_to_printer_path(ref_path)
+        if printer_path is None:
+            return {"error": f"Unknown reference path: {ref_path}"}
+
+        ref_content = self._read_reference_file(ref_path)
+        printer_content = self._read_printer_file(printer_path)
+        if ref_content is None:
+            return {"error": f"Reference file not found: {ref_path}"}
+        if printer_content is None:
+            return {"error": f"Printer file not found: {printer_path}"}
+
+        hunks = self._compute_hunks(ref_path, printer_content, ref_content)
+        selected = [h for h in hunks if h["index"] in hunk_indices]
+        if not selected:
+            return {"error": "No valid hunks selected", "applied": [], "failed": []}
+
+        self._create_backup(f"Pre-update backup for {ref_path} (partial)")
+
+        result_lines = printer_content.splitlines(keepends=True)
+        applied = []
+        failed = []
+        offset = 0
+
+        for hunk in selected:
+            success, result_lines, new_offset = _apply_single_hunk(
+                result_lines, hunk, offset
+            )
+            if success:
+                applied.append(hunk["index"])
+                offset = new_offset
+            else:
+                failed.append(hunk["index"])
+
+        new_content = "".join(result_lines)
+        self._write_printer_file(printer_path, new_content)
+
+        desc = f"Applied {len(applied)} hunk(s) to {ref_path}"
+        if failed:
+            desc += f" ({len(failed)} failed)"
+        self._create_backup(desc)
+
+        return {"applied": applied, "failed": failed}
+
+    # --- Backups ---
+
+    def _create_backup(self, message):
+        """Copy current printer config files into the backup repo and commit."""
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return
+        ref_files = list_files(REFERENCE_DIR)
+        for ref_path in ref_files:
+            printer_path = self._ref_to_printer_path(ref_path)
+            if printer_path is None:
+                continue
+            content = self._read_printer_file(printer_path)
+            if content is not None:
+                dest = os.path.join(BACKUP_DIR, ref_path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        backup_commit(BACKUP_DIR, f"{message} \u2014 {now}")
+
+    def get_backups(self, max_count=50):
+        """Get backup history."""
+        return backup_log(BACKUP_DIR, max_count=max_count)
+
+    def get_backup_files(self, commit_hash):
+        """List files in a specific backup."""
+        return backup_files_at(BACKUP_DIR, commit_hash)
+
+    def get_backup_download(self, commit_hash):
+        """Get a ZIP archive of a backup. Returns bytes."""
+        return backup_archive(BACKUP_DIR, commit_hash)
+
+    def restore_backup(self, commit_hash):
+        """Restore printer config from a backup commit."""
+        self._create_backup("Pre-restore backup")
+        files = backup_files_at(BACKUP_DIR, commit_hash)
+        restored = []
+        for file_path in files:
+            printer_path = self._ref_to_printer_path(file_path)
+            if printer_path is None:
+                continue
+            content = backup_file_content(BACKUP_DIR, commit_hash, file_path)
+            self._write_printer_file(printer_path, content)
+            restored.append(file_path)
+        self._create_backup(f"Restored from backup {commit_hash[:8]}")
+        return {"restored": restored}
+
+
+# --- Hunk patching helpers ---
+
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _parse_hunk_header(header):
+    """Parse @@ line numbers from a hunk header."""
+    m = _HUNK_HEADER_RE.match(header)
+    if not m:
+        return None
+    return {
+        "old_start": int(m.group(1)),
+        "old_count": int(m.group(2)) if m.group(2) else 1,
+        "new_start": int(m.group(3)),
+        "new_count": int(m.group(4)) if m.group(4) else 1,
+    }
+
+
+def _apply_single_hunk(lines, hunk, offset):
+    """Apply a single hunk to a list of lines.
+
+    Args:
+        lines: Current file lines (with newlines).
+        hunk: Hunk dict with header and lines.
+        offset: Line offset accumulated from previously applied hunks.
+
+    Returns:
+        (success, new_lines, new_offset)
+    """
+    parsed = _parse_hunk_header(hunk["header"])
+    if parsed is None:
+        return False, lines, offset
+
+    # old_start is 1-based in diff output
+    start = parsed["old_start"] - 1 + offset
+
+    # Split hunk lines into context/remove/add
+    old_lines = []
+    new_lines = []
+    for line in hunk["lines"]:
+        if line.startswith("-"):
+            old_lines.append(line[1:])
+        elif line.startswith("+"):
+            new_lines.append(line[1:])
+        elif line.startswith(" "):
+            old_lines.append(line[1:])
+            new_lines.append(line[1:])
+        else:
+            # No-newline-at-end marker or other, treat as context
+            old_lines.append(line)
+            new_lines.append(line)
+
+    # Verify context matches
+    end = start + len(old_lines)
+    if end > len(lines):
+        return False, lines, offset
+
+    actual = [l.rstrip("\n") for l in lines[start:end]]
+    expected = [l.rstrip("\n") for l in old_lines]
+    if actual != expected:
+        return False, lines, offset
+
+    # Apply: replace old lines with new lines
+    new_file_lines = (
+        lines[:start]
+        + [l + "\n" for l in new_lines]
+        + lines[end:]
+    )
+    new_offset = offset + len(new_lines) - len(old_lines)
+    return True, new_file_lines, new_offset
+
+
+def _hunk_summary(hunk):
+    """Generate a human-readable summary for a hunk."""
+    parsed = _parse_hunk_header(hunk["header"])
+    if parsed is None:
+        return ""
+    start = parsed["old_start"]
+    end = start + parsed["old_count"] - 1
+    if start == end:
+        return f"Line {start}"
+    return f"Lines {start}-{end}"

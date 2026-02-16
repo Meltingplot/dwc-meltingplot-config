@@ -1,0 +1,39 @@
+{
+  "id": "MeltingplotConfig",
+  "name": "Meltingplot Config",
+  "author": "Meltingplot",
+  "version": "0.1.0",
+  "license": "LGPL-3.0-or-later",
+  "homepage": "https://github.com/Meltingplot/dwc-meltingplot-config",
+  "dwcVersion": "auto",
+  "sbcRequired": true,
+  "sbcDsfVersion": "3.5",
+  "sbcExecutable": "meltingplot-config-daemon.py",
+  "sbcExecutableArguments": null,
+  "sbcOutputRedirected": true,
+  "sbcPermissions": [
+    "commandExecution",
+    "objectModelRead",
+    "objectModelReadWrite",
+    "registerHttpEndpoints",
+    "fileSystemAccess",
+    "readSystem",
+    "writeSystem",
+    "readMacros",
+    "writeMacros",
+    "readFilaments",
+    "writeFilaments",
+    "networkAccess",
+    "setPluginData"
+  ],
+  "sbcPythonDependencies": [],
+  "sbcData": {
+    "referenceRepoUrl": "",
+    "firmwareBranchOverride": "",
+    "detectedFirmwareVersion": "",
+    "activeBranch": "",
+    "lastSyncTimestamp": "",
+    "status": "not_configured"
+  },
+  "tags": ["meltingplot", "configuration", "config-management"]
+}

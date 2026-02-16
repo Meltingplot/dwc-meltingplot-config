@@ -242,7 +242,7 @@ describe('User flow: Apply changes', () => {
     it('apply single file: sends correct file path', async () => {
         backend
             .on('/status', { branches: [] })
-            .on('/apply/', { applied: ['sys/config.g'] })
+            .on('/apply?file=', { applied: ['sys/config.g'] })
             .on('/diff', { files: [] });
 
         const wrapper = mount(MeltingplotConfig, {
@@ -262,7 +262,7 @@ describe('User flow: Apply changes', () => {
         await wrapper.vm.confirmDialog.action();
         await flush();
 
-        const req = backend.requestsTo('/apply/').find(
+        const req = backend.requestsTo('/apply?file=').find(
             r => r.url.includes('sys%2Fconfig.g')
         );
         expect(req).toBeTruthy();
@@ -273,7 +273,7 @@ describe('User flow: Apply changes', () => {
     it('apply hunks: sends correct hunk indices in POST body', async () => {
         backend
             .on('/status', { branches: [] })
-            .on('/hunks', { applied: [0, 2], failed: [] })
+            .on('/applyHunks', { applied: [0, 2], failed: [] })
             .on('/diff', { files: [] });
 
         const wrapper = mount(MeltingplotConfig, {
@@ -292,7 +292,7 @@ describe('User flow: Apply changes', () => {
         await wrapper.vm.confirmDialog.action();
         await flush();
 
-        const req = backend.lastRequestTo('/hunks');
+        const req = backend.lastRequestTo('/applyHunks');
         expect(req).toBeTruthy();
         const body = JSON.parse(req.opts.body);
         expect(body.hunks).toEqual([0, 2]);
@@ -326,7 +326,7 @@ describe('User flow: Backup and restore', () => {
                     }
                 ]
             })
-            .on('/restore/', { restored: ['sys/config.g'] })
+            .on('/restore', { restored: ['sys/config.g'] })
             .on('/diff', { files: [] });
 
         const wrapper = mount(MeltingplotConfig, {
@@ -363,7 +363,7 @@ describe('User flow: Backup and restore', () => {
         await wrapper.vm.confirmDialog.action();
         await flush();
 
-        const req = backend.lastRequestTo('/restore/');
+        const req = backend.lastRequestTo('/restore?hash=');
         expect(req).toBeTruthy();
         expect(req.url).toContain('abc123def456');
         expect(wrapper.vm.snackbar.color).toBe('success');
@@ -384,7 +384,7 @@ describe('User flow: Backup and restore', () => {
         window.open = jest.fn();
         wrapper.vm.downloadBackup('abc123');
         expect(window.open).toHaveBeenCalledWith(
-            expect.stringContaining('/backup/abc123/download'),
+            expect.stringContaining('/backupDownload?hash=abc123'),
             '_blank'
         );
 

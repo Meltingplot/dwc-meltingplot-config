@@ -105,16 +105,16 @@ describe('Plugin manifest validation (DWC 3.6 compatibility)', () => {
         expect(invalid).toEqual([]);
     });
 
-    it('dwcVersion is null or a valid version string (not "auto")', () => {
+    it('dwcVersion is null, a valid version string, or "auto-major"', () => {
         if (manifest.dwcVersion !== null && manifest.dwcVersion !== undefined) {
-            // Must look like a version number, not a word like "auto"
-            expect(manifest.dwcVersion).toMatch(/^\d+(\.\d+)*$/);
+            // Must be a version number or DSF auto-matching pattern
+            expect(manifest.dwcVersion).toMatch(/^(\d+(\.\d+)*|auto-major)$/);
         }
     });
 
-    it('sbcDsfVersion is null or a valid version string', () => {
+    it('sbcDsfVersion is null, a valid version string, or "auto-major"', () => {
         if (manifest.sbcDsfVersion !== null && manifest.sbcDsfVersion !== undefined) {
-            expect(manifest.sbcDsfVersion).toMatch(/^\d+(\.\d+)*$/);
+            expect(manifest.sbcDsfVersion).toMatch(/^(\d+(\.\d+)*|auto-major)$/);
         }
     });
 });

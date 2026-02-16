@@ -170,7 +170,7 @@ export default {
       if (file.hunks || file.status !== 'modified') return
       this.$set(file, 'loadingDetail', true)
       try {
-        const response = await fetch(`${API_BASE}/diff/${encodeURIComponent(file.file)}`)
+        const response = await fetch(`${API_BASE}/diff?file=${encodeURIComponent(file.file)}`)
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
         this.$set(file, 'hunks', (data.hunks || []).map(h => ({ ...h, selected: true })))

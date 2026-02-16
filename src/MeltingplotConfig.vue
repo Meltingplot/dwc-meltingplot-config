@@ -319,7 +319,7 @@ export default {
         `Apply all changes to ${file}? A backup will be created first.`,
         async () => {
           try {
-            await this.apiPost(`/apply/${encodeURIComponent(file)}`)
+            await this.apiPost(`/apply?file=${encodeURIComponent(file)}`)
             this.notify(`Applied changes to ${file}`, 'success')
             await this.loadDiff()
           } catch (err) {
@@ -336,7 +336,7 @@ export default {
         async () => {
           try {
             const result = await this.apiPost(
-              `/apply/${encodeURIComponent(file)}/hunks`,
+              `/applyHunks?file=${encodeURIComponent(file)}`,
               { hunks }
             )
             if (result.failed && result.failed.length > 0) {
@@ -360,7 +360,7 @@ export default {
         'This will restore the printer config to the selected backup state. A backup of the current state will be created first. Continue?',
         async () => {
           try {
-            await this.apiPost(`/restore/${encodeURIComponent(commitHash)}`)
+            await this.apiPost(`/restore?hash=${encodeURIComponent(commitHash)}`)
             this.notify('Backup restored successfully', 'success')
             await this.loadDiff()
           } catch (err) {
@@ -370,7 +370,7 @@ export default {
       )
     },
     downloadBackup(commitHash) {
-      window.open(`${API_BASE}/backup/${encodeURIComponent(commitHash)}/download`, '_blank')
+      window.open(`${API_BASE}/backupDownload?hash=${encodeURIComponent(commitHash)}`, '_blank')
     },
     async saveSettings() {
       this.savingSettings = true

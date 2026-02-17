@@ -71,12 +71,47 @@ describe('ConfigDiff', () => {
       expect(wrapper.vm.fileStatusIcon('extra')).toBe('mdi-file-question')
     })
 
-    it('lineClass returns correct CSS classes', () => {
+    it('sideBySideLines pairs removed and added lines', () => {
       const wrapper = mountComponent()
-      expect(wrapper.vm.lineClass('+added line')).toBe('diff-add')
-      expect(wrapper.vm.lineClass('-removed line')).toBe('diff-remove')
-      expect(wrapper.vm.lineClass(' context line')).toBe('diff-context')
-      expect(wrapper.vm.lineClass('other')).toBe('diff-context')
+      const hunk = {
+        lines: [' context', '-old line', '+new line', ' end']
+      }
+      const rows = wrapper.vm.sideBySideLines(hunk)
+      expect(rows).toHaveLength(3)
+      // Context line appears on both sides
+      expect(rows[0]).toEqual({ left: 'context', leftClass: 'diff-context', right: 'context', rightClass: 'diff-context' })
+      // Removed on left, added on right
+      expect(rows[1]).toEqual({ left: 'old line', leftClass: 'diff-remove', right: 'new line', rightClass: 'diff-add' })
+      // Trailing context
+      expect(rows[2]).toEqual({ left: 'end', leftClass: 'diff-context', right: 'end', rightClass: 'diff-context' })
+    })
+
+    it('sideBySideLines handles unbalanced removes and adds', () => {
+      const wrapper = mountComponent()
+      const hunk = {
+        lines: ['-removed1', '-removed2', '+added1']
+      }
+      const rows = wrapper.vm.sideBySideLines(hunk)
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toEqual({ left: 'removed1', leftClass: 'diff-remove', right: 'added1', rightClass: 'diff-add' })
+      expect(rows[1]).toEqual({ left: 'removed2', leftClass: 'diff-remove', right: null, rightClass: 'diff-empty' })
+    })
+
+    it('sideBySideLines handles only adds', () => {
+      const wrapper = mountComponent()
+      const hunk = { lines: ['+new1', '+new2'] }
+      const rows = wrapper.vm.sideBySideLines(hunk)
+      expect(rows).toHaveLength(2)
+      expect(rows[0].left).toBeNull()
+      expect(rows[0].leftClass).toBe('diff-empty')
+      expect(rows[0].right).toBe('new1')
+      expect(rows[0].rightClass).toBe('diff-add')
+    })
+
+    it('sideBySideLines returns empty array for hunk without lines', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.sideBySideLines({})).toEqual([])
+      expect(wrapper.vm.sideBySideLines({ lines: null })).toEqual([])
     })
   })
 

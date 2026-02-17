@@ -44,12 +44,35 @@ dwc-meltingplot-config/
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
   - `model.plugins` → `ModelDictionary` (dict subclass, keyed by plugin ID); `plugin.data` → `dict` of custom key-value pairs
   - Write plugin data via `cmd.set_plugin_data(plugin_id, key, value)`; read it back from `plugin.data[key]`
-  - **dsf-python deserialization bug:** `get_object_model()` does NOT populate dict-typed properties like `Plugin.data` — `_update_from_json()` handles `list` and `ModelObject` but silently skips `dict`. Use `get_serialized_object_model()` (returns raw JSON string) and parse with `json.loads()` to read plugin data correctly.
   - **Plugin manifest `data` vs `sbcData`:** DSF v3.6 only recognises the `data` field in `plugin.json`. There is **no `SbcData` property** in the DSF ObjectModel — `sbcData` in the manifest is silently ignored. Keys used with `SetPluginData` **must** be pre-declared in the `data` section of `plugin.json`.
   - Key class paths in dsf-python: `dsf.object_model.ObjectModel`, `dsf.object_model.boards.Board`, `dsf.object_model.plugins.Plugin` / `PluginManifest`
 - **Git operations:** `git` CLI via subprocess
 - **Diffing/patching:** Python `difflib` (standard library)
 - **Target DWC version:** 3.6 (`v3.6-dev` branch of Duet3D/DuetWebControl)
+
+## Known dsf-python Bugs & Runtime Workarounds
+
+These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at startup. **Do not remove these workarounds** — they are required for correct operation on real hardware.
+
+### 1. PluginManifest._data deserialization bug
+
+**Bug:** `PluginManifest.__init__` initialises `_data` as a plain `dict {}`. The `_update_from_json()` method only handles `ModelObject`, `ModelCollection`, `ModelDictionary`, and `list` — it silently **skips** plain `dict` properties. This means `get_object_model().plugins[id].data` is always `{}`.
+
+**Workaround:** Monkey-patch `PluginManifest.__init__` to replace `_data` with `ModelDictionary(False)` at import time in `meltingplot-config-daemon.py` (lines 24-36). This makes `_update_from_json` populate `plugin.data` correctly.
+
+**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+
+### 2. No `get_file()` / `put_file()` methods on CommandConnection
+
+**Bug:** `dsf.connections.CommandConnection` has **no** `get_file()` or `put_file()` methods, despite what documentation might suggest. Calling them raises `AttributeError`.
+
+**Workaround:** At daemon startup, use `cmd.resolve_path("0:/sys")` to convert virtual printer paths (e.g., `"0:/sys"`) to real filesystem paths (e.g., `"/opt/dsf/sd/sys"`). Then use standard Python `open()` for all file I/O. The `ConfigManager` stores a `resolved_dirs` mapping for this purpose.
+
+### 3. DSF Directories object — typed ModelObject, not a dict
+
+**Finding:** `model.directories` is a typed `Directories` ModelObject with named snake_case properties (`filaments`, `firmware`, `g_codes`, `macros`, `menu`, `system`, `web`). Values are strings like `"0:/sys"` (no trailing slash). This is **not a dict** — use `getattr()` for attribute access.
+
+**Our implementation:** `build_directory_map(model)` in the daemon reads these attributes and builds a `ref_folder → printer_path` mapping (e.g., `{"sys/": "0:/sys/"}`). This mapping is passed to `ConfigManager` to convert between reference repo paths and printer paths.
 
 ## Development Setup
 
@@ -69,6 +92,18 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 
 ## Testing
 
+### Testing strategy
+
+Neither DuetWebControl nor DuetSoftwareFramework have end-to-end tests for plugins. DWC has zero test infrastructure. DSF has NUnit unit tests for code parsing and model deserialization only. dsf-python uses mock Unix socket servers with threading for protocol-level tests.
+
+Our testing strategy fills this gap with four layers:
+
+1. **Unit tests** — Test individual functions/methods in isolation (mocked dependencies)
+2. **Integration tests** — Test ConfigManager with real git repos and temp filesystems
+3. **E2E backend tests** — Wire daemon handlers to real ConfigManager with real git + filesystem, exercising the full Python chain: `handler → config_manager → git_utils → filesystem`
+4. **Frontend E2E tests** — Mount full Vue component tree with MockBackend, testing user flows through the UI
+5. **API contract tests** — Validate that daemon handler response shapes match what frontend components expect
+
 ### Backend (Python)
 
 - **Framework:** pytest
@@ -79,6 +114,8 @@ The Python backend requires no build step. It runs on the SBC under DSF.
   - `tests/test_config_manager.py` — Diff engine, hunk parsing, hunk apply, path conversion, round-trip
   - `tests/test_daemon.py` — Response helpers, handler functions, endpoint registry (mocks DSF library)
   - `tests/test_daemon_handlers.py` — Handler edge cases, plugin data helpers, register_endpoints
+  - `tests/test_integration.py` — Full sync → diff → apply → backup → restore round-trip with real git repos
+  - `tests/test_e2e.py` — **End-to-end**: daemon handlers wired to real ConfigManager, real git repos, and real temp filesystem — tests the complete backend chain without mocks
 
 ### Frontend (JavaScript)
 
@@ -86,13 +123,14 @@ The Python backend requires no build step. It runs on the SBC under DSF.
 - **Run:** `npm test`
 - **Test files (in `tests/frontend/`):**
   - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events
-  - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, CSS class logic
+  - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, side-by-side diff logic
   - `BackupHistory.test.js` — Empty/loading states, backup display, expand/collapse, fetch mocking
 - **Integration tests (in `tests/frontend/integration/`):**
   - `full-mount.test.js` — Full component tree with real Vuetify
   - `plugin-registration.test.js` — DWC plugin registration contract
   - `plugin-structure.test.js` — Plugin ZIP structure validation
   - `user-flows.test.js` — End-to-end user flows with mock backend
+  - `api-contract.test.js` — Validates daemon API response shapes match frontend component expectations
 
 ## Linting & Formatting
 
@@ -157,10 +195,21 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 - Backend: Follow PEP 8 / PEP 257. Use `logging` module, not print.
 - DSF ObjectModel: **never use dict-style `.get()` on model objects**. Use `getattr(obj, "snake_case_name", default)` for safe attribute access. `model.plugins` is a dict so `.get()` is fine there, but `Plugin`, `Board`, etc. are typed objects with snake_case properties.
 - DSF plugin data: Use the `data` field (not `sbcData`) in `plugin.json` for all custom key-value pairs. DSF v3.6 ignores `sbcData` entirely. `SetPluginData` requires keys to already exist in `data`.
+- DSF file I/O: Use `cmd.resolve_path(printer_path)` + standard `open()`. **Never** call `cmd.get_file()` or `cmd.put_file()` — they do not exist on CommandConnection.
 - Test mocks for DSF ObjectModel: use `types.SimpleNamespace` to simulate typed objects (e.g., `SimpleNamespace(firmware_version="3.5")` for a Board, `SimpleNamespace(data={...})` for a Plugin). Do not use plain dicts for objects that are not dicts in production.
 - Prefer editing existing files over creating new ones.
 - Do not add unnecessary abstractions or over-engineer solutions.
 - Keep this CLAUDE.md updated as the project evolves.
+
+### Common debugging pitfalls
+
+These patterns have caused real bugs in this project. Be aware of them:
+
+1. **Summary hunks vs detail hunks:** `diff_all()` returns summary hunks `{index, header}` only. `diff_file()` returns full hunks with `{index, header, lines, summary}`. Frontend guard logic must check for `hunk.lines` (not just `hunk` truthiness) to decide whether to fetch detail.
+2. **Monkey-patch import order in tests:** The dsf-python monkey-patch in the daemon imports `dsf.object_model.plugins.plugin_manifest` at module level. Tests that mock `dsf.*` modules must set up mocks **before** importing the daemon. The monkey-patch is wrapped in `try/except ImportError: pass` for this reason.
+3. **File I/O on printer:** The daemon resolves virtual paths at startup (`cmd.resolve_path("0:/sys")` → `"/opt/dsf/sd/sys"`). ConfigManager stores this mapping and uses filesystem I/O. If `resolve_path()` fails, the default mapping (`DEFAULT_RESOLVED_DIRS`) is used.
+4. **Directory mapping trailing slashes:** DSF Directories values lack trailing slashes (`"0:/sys"`). The daemon adds them (`"0:/sys/"`). The reference repo folder name is extracted after the `:/` separator.
+5. **Side-by-side diff rendering:** `sideBySideLines(hunk)` pairs consecutive `-`/`+` lines into left/right columns. Context lines appear on both sides. Unbalanced removes/adds leave empty cells (`null` value, `diff-empty` CSS class).
 
 ### Verifying upstream APIs
 
@@ -176,8 +225,15 @@ The dsf-python, DuetWebControl, and DuetSoftwareFramework libraries are **not in
    - `src/dsf/object_model/plugins/plugin_manifest.py` — `PluginManifest` (`.data`, `.id`, `.version`, etc.)
    - `src/dsf/object_model/plugins/plugins.py` — `Plugin` extends `PluginManifest` (`.pid`, `.dsf_files`, etc.)
    - `src/dsf/object_model/model_dictionary.py` — `ModelDictionary(dict)` (used for `.plugins`, `.globals`)
+   - `src/dsf/object_model/directories/directories.py` — `Directories` (typed ModelObject with `.filaments`, `.firmware`, `.g_codes`, `.macros`, `.menu`, `.system`, `.web`)
+   - `src/dsf/connections/base_command_connection.py` — `BaseCommandConnection` (available methods: `add_http_endpoint`, `resolve_path`, `set_plugin_data`, `perform_command`, `get_object_model`, etc. — **no** `get_file`/`put_file`)
 3. **Common pitfall:** dsf-python converts JSON camelCase to Python snake_case automatically (e.g., `firmwareVersion` → `firmware_version`). The JSON wire format and the Python API use different naming conventions.
 4. **For DWC frontend APIs**, check the DuetWebControl source for store structure, plugin registration API, and component patterns:
    ```bash
    git clone --branch v3.6-dev --depth 1 https://github.com/Duet3D/DuetWebControl.git /tmp/DuetWebControl
    ```
+5. **Upstream testing status (as of 2026-02):**
+   - **DuetWebControl:** Zero test infrastructure. No CI test pipeline. Only admin workflows (CLA, issue bots).
+   - **DuetSoftwareFramework:** NUnit unit tests for code parsing, model deserialization, IPC subscription. No plugin lifecycle or HTTP integration tests.
+   - **dsf-python:** pytest with mock Unix socket servers using `threading.Thread` + `threading.Event` for synchronization. Tests validate protocol messages (JSON over sockets). Has JSON test fixtures for object model.
+   - **Conclusion:** No upstream E2E tests exist for the plugin ↔ DSF ↔ DWC interaction. Our project must implement its own.

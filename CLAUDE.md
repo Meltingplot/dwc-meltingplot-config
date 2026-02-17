@@ -32,7 +32,13 @@ dwc-meltingplot-config/
 - **Backend:** Python 3 (runs as DSF SBC plugin process)
 - **State management:** Vuex 3 (machine model via `machine/model` store)
 - **Bundler:** Webpack (Vue CLI 5) via DWC's `build-plugin` script
-- **DSF communication:** `dsf-python` library (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
+- **DSF communication:** `dsf-python` library v3.6-dev (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
+  - **Source:** `v3.6-dev` branch of [Duet3D/dsf-python](https://github.com/Duet3D/dsf-python/tree/v3.6-dev)
+  - **ObjectModel API:** uses **attribute access** with **snake_case** names (not dict `.get()`). Use `getattr(obj, "attr", default)` for safe access.
+  - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
+  - `model.plugins` → `ModelDictionary` (dict subclass, keyed by plugin ID); `plugin.data` → `dict` of custom key-value pairs
+  - Write plugin data via `cmd.set_plugin_data(key, value, plugin_id)`; read it back from `plugin.data[key]`
+  - Key class paths in dsf-python: `dsf.object_model.ObjectModel`, `dsf.object_model.boards.Board`, `dsf.object_model.plugins.Plugin` / `PluginManifest`
 - **Git operations:** `git` CLI via subprocess
 - **Diffing/patching:** Python `difflib` (standard library)
 - **Target DWC version:** 3.6 (`v3.6-dev` branch of Duet3D/DuetWebControl)
@@ -139,6 +145,8 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 
 - Frontend: Vue 2.7 + Vuetify 2.7 conventions (DWC 3.6). Use `v-model`, `$set` for reactivity, `mapState`/`mapGetters` for Vuex.
 - Backend: Follow PEP 8 / PEP 257. Use `logging` module, not print.
+- DSF ObjectModel: **never use dict-style `.get()` on model objects**. Use `getattr(obj, "snake_case_name", default)` for safe attribute access. `model.plugins` is a dict so `.get()` is fine there, but `Plugin`, `Board`, etc. are typed objects with snake_case properties.
+- Test mocks for DSF ObjectModel: use `types.SimpleNamespace` to simulate typed objects (e.g., `SimpleNamespace(firmware_version="3.5")` for a Board, `SimpleNamespace(data={...})` for a Plugin). Do not use plain dicts for objects that are not dicts in production.
 - Prefer editing existing files over creating new ones.
 - Do not add unnecessary abstractions or over-engineer solutions.
 - Keep this CLAUDE.md updated as the project evolves.

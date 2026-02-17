@@ -4,7 +4,6 @@ import importlib
 import json
 import sys
 import types
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -98,16 +97,15 @@ class TestHandlers:
         manager = MagicMock()
         manager.get_branches.return_value = ["main"]
 
-        plugin = SimpleNamespace(data={
-            "status": "up_to_date",
-            "detectedFirmwareVersion": "3.5",
-            "activeBranch": "3.5",
-            "referenceRepoUrl": "https://example.com",
-            "lastSyncTimestamp": "2026-01-01T00:00:00",
+        cmd.get_serialized_object_model.return_value = json.dumps({
+            "plugins": {"MeltingplotConfig": {"data": {
+                "status": "up_to_date",
+                "detectedFirmwareVersion": "3.5",
+                "activeBranch": "3.5",
+                "referenceRepoUrl": "https://example.com",
+                "lastSyncTimestamp": "2026-01-01T00:00:00",
+            }}}
         })
-        cmd.get_object_model.return_value = SimpleNamespace(
-            plugins={"MeltingplotConfig": plugin}
-        )
 
         resp = daemon.handle_status(cmd, manager, "", {})
         assert resp["status"] == 200

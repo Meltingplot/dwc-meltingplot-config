@@ -36,21 +36,18 @@ API_NAMESPACE = "MeltingplotConfig"
 def get_plugin_data(cmd):
     """Read plugin data from the DSF object model.
 
-    The DSF ObjectModel uses attribute access (not dict-style .get()).
-    model.plugins is a ModelDictionary (dict subclass) keyed by plugin ID.
-    Each Plugin has a .data dict holding custom key-value pairs set via
-    CommandConnection.set_plugin_data().
+    Uses get_serialized_object_model() to get raw JSON and parses it
+    directly.  This works around a dsf-python bug where dict-typed
+    properties (like Plugin.data) are never populated during
+    deserialization — _update_from_json handles list and ModelObject
+    but silently skips dict attributes.
     """
     try:
-        model = cmd.get_object_model()
-        plugins = getattr(model, "plugins", None) or {}
-        plugin = plugins.get(PLUGIN_ID) if isinstance(plugins, dict) else None
-        if plugin is None:
-            return {}
-        data = getattr(plugin, "data", None)
-        if isinstance(data, dict):
-            return data
-        return {}
+        raw = cmd.get_serialized_object_model()
+        model = json.loads(raw)
+        plugin = model.get("plugins", {}).get(PLUGIN_ID, {})
+        data = plugin.get("data", {})
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 

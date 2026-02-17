@@ -44,6 +44,7 @@ dwc-meltingplot-config/
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
   - `model.plugins` → `ModelDictionary` (dict subclass, keyed by plugin ID); `plugin.data` → `dict` of custom key-value pairs
   - Write plugin data via `cmd.set_plugin_data(plugin_id, key, value)`; read it back from `plugin.data[key]`
+  - **dsf-python deserialization bug:** `get_object_model()` does NOT populate dict-typed properties like `Plugin.data` — `_update_from_json()` handles `list` and `ModelObject` but silently skips `dict`. Use `get_serialized_object_model()` (returns raw JSON string) and parse with `json.loads()` to read plugin data correctly.
   - **Plugin manifest `data` vs `sbcData`:** DSF v3.6 only recognises the `data` field in `plugin.json`. There is **no `SbcData` property** in the DSF ObjectModel — `sbcData` in the manifest is silently ignored. Keys used with `SetPluginData` **must** be pre-declared in the `data` section of `plugin.json`.
   - Key class paths in dsf-python: `dsf.object_model.ObjectModel`, `dsf.object_model.boards.Board`, `dsf.object_model.plugins.Plugin` / `PluginManifest`
 - **Git operations:** `git` CLI via subprocess

@@ -18,6 +18,7 @@
     "launchProcesses",
     "networkAccess"
   ],
+  "sbcPackageDependencies": ["git"],
   "sbcPythonDependencies": ["dsf-python"],
   "sbcData": {
     "referenceRepoUrl": "",

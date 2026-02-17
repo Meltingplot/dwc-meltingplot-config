@@ -25,13 +25,19 @@ def _run(args, cwd=None):
     """Run a git command and return stdout."""
     cmd = [GIT_BIN] + args
     logger.debug("Running: %s (cwd=%s)", " ".join(cmd), cwd)
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"git binary not found at '{GIT_BIN}'. "
+            "Ensure git is installed (apt install git)."
+        ) from None
     if result.returncode != 0:
         raise RuntimeError(
             f"git {args[0]} failed (rc={result.returncode}): {result.stderr.strip()}"

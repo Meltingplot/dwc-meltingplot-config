@@ -429,8 +429,13 @@ def main():
     resolved_dirs = {}
     for ref_folder, printer_prefix in effective_dir_map.items():
         try:
-            # resolve_path wants a path without trailing slash
-            real_path = cmd.resolve_path(printer_prefix.rstrip("/"))
+            # resolve_path wants a path without trailing slash.
+            # dsf-python's resolve_path returns a Response object (not a
+            # plain string) — the actual path is in response.result.
+            response = cmd.resolve_path(printer_prefix.rstrip("/"))
+            real_path = getattr(response, "result", response)
+            if not isinstance(real_path, str):
+                real_path = str(real_path)
             if not real_path.endswith("/"):
                 real_path += "/"
             resolved_dirs[printer_prefix] = real_path

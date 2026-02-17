@@ -33,6 +33,10 @@ dwc-meltingplot-config/
 - **Backend:** Python 3 (runs as DSF SBC plugin process)
   - **Source:** `v3.6-dev` branch of [Duet3D/DuetSoftwareFramework](https://github.com/Duet3D/DuetSoftwareFramework/tree/v3.6-dev)
 - **State management:** Vuex 3 (machine model via `machine/model` store)
+  - In DWC 3.6, `state.plugins` is a **Map** (not a plain object) keyed by plugin ID
+  - Each value is a **full Plugin object** (id, name, version, data, …) — custom data lives in `plugin.data`
+  - Access pattern: `state.plugins.get('MeltingplotConfig')?.data?.someKey`
+  - Use `instanceof Map` guard for test compatibility (tests may use plain objects)
 - **Bundler:** Webpack (Vue CLI 5) via DWC's `build-plugin` script
 - **DSF communication:** `dsf-python` library v3.6-dev (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
   - **Source:** `v3.6-dev` branch of [Duet3D/dsf-python](https://github.com/Duet3D/dsf-python/tree/v3.6-dev)
@@ -40,6 +44,7 @@ dwc-meltingplot-config/
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
   - `model.plugins` → `ModelDictionary` (dict subclass, keyed by plugin ID); `plugin.data` → `dict` of custom key-value pairs
   - Write plugin data via `cmd.set_plugin_data(plugin_id, key, value)`; read it back from `plugin.data[key]`
+  - **Plugin manifest `data` vs `sbcData`:** DSF v3.6 only recognises the `data` field in `plugin.json`. There is **no `SbcData` property** in the DSF ObjectModel — `sbcData` in the manifest is silently ignored. Keys used with `SetPluginData` **must** be pre-declared in the `data` section of `plugin.json`.
   - Key class paths in dsf-python: `dsf.object_model.ObjectModel`, `dsf.object_model.boards.Board`, `dsf.object_model.plugins.Plugin` / `PluginManifest`
 - **Git operations:** `git` CLI via subprocess
 - **Diffing/patching:** Python `difflib` (standard library)
@@ -146,8 +151,11 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 ## Conventions for AI Assistants
 
 - Frontend: Vue 2.7 + Vuetify 2.7 conventions (DWC 3.6). Use `v-model`, `$set` for reactivity, `mapState`/`mapGetters` for Vuex.
+- Frontend plugin data: Access via `state.plugins.get('MeltingplotConfig')?.data` (Map) with a plain-object fallback for tests. Never read custom data directly off the plugin object — it lives in `plugin.data`.
+- Frontend test mocks: `createStore(pluginData)` wraps the data as `{ MeltingplotConfig: { data: pluginData } }` to match the real Plugin object structure.
 - Backend: Follow PEP 8 / PEP 257. Use `logging` module, not print.
 - DSF ObjectModel: **never use dict-style `.get()` on model objects**. Use `getattr(obj, "snake_case_name", default)` for safe attribute access. `model.plugins` is a dict so `.get()` is fine there, but `Plugin`, `Board`, etc. are typed objects with snake_case properties.
+- DSF plugin data: Use the `data` field (not `sbcData`) in `plugin.json` for all custom key-value pairs. DSF v3.6 ignores `sbcData` entirely. `SetPluginData` requires keys to already exist in `data`.
 - Test mocks for DSF ObjectModel: use `types.SimpleNamespace` to simulate typed objects (e.g., `SimpleNamespace(firmware_version="3.5")` for a Board, `SimpleNamespace(data={...})` for a Plugin). Do not use plain dicts for objects that are not dicts in production.
 - Prefer editing existing files over creating new ones.
 - Do not add unnecessary abstractions or over-engineer solutions.

@@ -109,7 +109,7 @@ class TestSetPluginData:
         daemon = _import_daemon()
         cmd = MagicMock()
         daemon.set_plugin_data(cmd, "activeBranch", "3.5")
-        cmd.set_plugin_data.assert_called_once_with("activeBranch", "3.5", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_called_once_with("MeltingplotConfig", "activeBranch", "3.5")
 
     def test_logs_warning_on_failure(self):
         daemon = _import_daemon()
@@ -150,9 +150,9 @@ class TestHandleSync:
         manager.sync.assert_called_once_with(
             "https://example.com/repo.git", "3.5.1", branch_override=""
         )
-        # Verify plugin data updates
+        # Verify plugin data updates (arg order: plugin_id, key, value)
         calls = cmd.set_plugin_data.call_args_list
-        keys_set = [c[0][0] for c in calls]
+        keys_set = [c[0][1] for c in calls]
         assert "activeBranch" in keys_set
         assert "lastSyncTimestamp" in keys_set
         assert "status" in keys_set
@@ -329,7 +329,7 @@ class TestHandleSettings:
         body = json.dumps({"referenceRepoUrl": "https://new.example.com/repo.git"})
         resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
-        cmd.set_plugin_data.assert_any_call("referenceRepoUrl", "https://new.example.com/repo.git", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "referenceRepoUrl", "https://new.example.com/repo.git")
 
     def test_settings_sets_branch_override(self):
         daemon = _import_daemon()
@@ -339,7 +339,7 @@ class TestHandleSettings:
         body = json.dumps({"firmwareBranchOverride": "custom"})
         resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
-        cmd.set_plugin_data.assert_any_call("firmwareBranchOverride", "custom", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "firmwareBranchOverride", "custom")
 
     def test_settings_invalid_json(self):
         daemon = _import_daemon()

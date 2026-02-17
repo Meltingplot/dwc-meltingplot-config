@@ -58,7 +58,7 @@ def get_plugin_data(cmd):
 def set_plugin_data(cmd, key, value):
     """Update a single field in plugin sbcData."""
     try:
-        cmd.set_plugin_data(key, value, PLUGIN_ID)
+        cmd.set_plugin_data(PLUGIN_ID, key, value)
     except Exception as exc:
         logger.warning("Failed to set plugin data %s=%s: %s", key, value, exc)
 

@@ -39,7 +39,7 @@ dwc-meltingplot-config/
   - **ObjectModel API:** uses **attribute access** with **snake_case** names (not dict `.get()`). Use `getattr(obj, "attr", default)` for safe access.
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
   - `model.plugins` → `ModelDictionary` (dict subclass, keyed by plugin ID); `plugin.data` → `dict` of custom key-value pairs
-  - Write plugin data via `cmd.set_plugin_data(key, value, plugin_id)`; read it back from `plugin.data[key]`
+  - Write plugin data via `cmd.set_plugin_data(plugin_id, key, value)`; read it back from `plugin.data[key]`
   - Key class paths in dsf-python: `dsf.object_model.ObjectModel`, `dsf.object_model.boards.Board`, `dsf.object_model.plugins.Plugin` / `PluginManifest`
 - **Git operations:** `git` CLI via subprocess
 - **Diffing/patching:** Python `difflib` (standard library)

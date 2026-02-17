@@ -29,7 +29,9 @@ dwc-meltingplot-config/
 ## Language & Ecosystem
 
 - **Frontend:** Vue.js 2.7 + Vuetify 2.7 (DWC 3.6 uses Vue 2.7 + Vuetify 2.7 + Vuex 3)
+  - **Source:** `v3.6-dev` branch of [Duet3D/DuetWebControl](https://github.com/Duet3D/DuetWebControl/tree/v3.6-dev)
 - **Backend:** Python 3 (runs as DSF SBC plugin process)
+  - **Source:** `v3.6-dev` branch of [Duet3D/DuetSoftwareFramework](https://github.com/Duet3D/DuetSoftwareFramework/tree/v3.6-dev)
 - **State management:** Vuex 3 (machine model via `machine/model` store)
 - **Bundler:** Webpack (Vue CLI 5) via DWC's `build-plugin` script
 - **DSF communication:** `dsf-python` library v3.6-dev (Unix socket, installed via `sbcPythonDependencies` in plugin venv)

@@ -1,6 +1,6 @@
 """Integration tests — full sync -> diff -> apply -> backup -> restore round-trip.
 
-Uses real git repos (temp directories) and a mock DSF connection to exercise
+Uses real git repos (temp directories) and a real temp filesystem to exercise
 the complete flow across ConfigManager and git_utils."""
 
 import os
@@ -55,55 +55,61 @@ def reference_repo(tmp_path):
 
 
 @pytest.fixture
-def printer_files():
-    """Simulated printer filesystem as a dict."""
-    return {
-        "0:/sys/config.g": "G28\nM584 X0 Y1\nM906 X800 Y800\n",
-        "0:/sys/homex.g": "G91\nG1 H1 X-300 F3000\n",
-        "0:/macros/print_start.g": "T0\nM116\n",
-    }
+def printer_fs(tmp_path):
+    """Create a temp printer filesystem with initial config files."""
+    root = tmp_path / "printer_sd"
+    root.mkdir()
+
+    sys_dir = root / "sys"
+    sys_dir.mkdir()
+    (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\nM906 X800 Y800\n")
+    (sys_dir / "homex.g").write_text("G91\nG1 H1 X-300 F3000\n")
+
+    macros_dir = root / "macros"
+    macros_dir.mkdir()
+    (macros_dir / "print_start.g").write_text("T0\nM116\n")
+
+    return root
 
 
 @pytest.fixture
-def mock_dsf(printer_files):
-    """Mock DSF connection backed by the printer_files dict."""
-    dsf = MagicMock()
-
-    def get_file(path):
-        return printer_files.get(path)
-
-    def put_file(path, content):
-        printer_files[path] = content
-
-    dsf.get_file.side_effect = get_file
-    dsf.put_file.side_effect = put_file
-    return dsf
-
-
-@pytest.fixture
-def integration_env(tmp_path, reference_repo, mock_dsf):
+def integration_env(tmp_path, reference_repo, printer_fs):
     """Set up complete integration environment with patched paths."""
     ref_dir = str(tmp_path / "reference")
     backup_dir = str(tmp_path / "backups")
+
+    resolved = {
+        "0:/sys/": str(printer_fs / "sys") + "/",
+        "0:/macros/": str(printer_fs / "macros") + "/",
+        "0:/filaments/": str(printer_fs / "filaments") + "/",
+    }
 
     with (
         patch("config_manager.REFERENCE_DIR", ref_dir),
         patch("config_manager.BACKUP_DIR", backup_dir),
         patch("config_manager.PLUGIN_DIR", str(tmp_path)),
     ):
-        manager = ConfigManager(dsf_command_connection=mock_dsf)
+        manager = ConfigManager(
+            dsf_command_connection=MagicMock(),
+            resolved_dirs=resolved,
+        )
         yield {
             "manager": manager,
             "ref_dir": ref_dir,
             "backup_dir": backup_dir,
             "repo_url": reference_repo,
-            "dsf": mock_dsf,
+            "printer_fs": printer_fs,
         }
+
+
+def _read_printer(printer_fs, rel_path):
+    """Read a file from the printer filesystem."""
+    return (printer_fs / rel_path).read_text()
 
 
 class TestSyncDiffApplyRoundTrip:
     def test_sync_then_diff_shows_no_changes(self, integration_env):
-        """After syncing main, printer files match reference → no changes."""
+        """After syncing main, printer files match reference -> no changes."""
         env = integration_env
         result = env["manager"].sync(env["repo_url"], "1.0")  # Falls back to main
         assert "error" not in result
@@ -113,7 +119,7 @@ class TestSyncDiffApplyRoundTrip:
         for f in diff:
             assert f["status"] == "unchanged", f"Expected {f['file']} unchanged"
 
-    def test_sync_different_branch_shows_diff(self, integration_env, printer_files):
+    def test_sync_different_branch_shows_diff(self, integration_env):
         """Syncing to 3.5 branch shows modified config.g (different motor currents)."""
         env = integration_env
         result = env["manager"].sync(env["repo_url"], "3.5")
@@ -127,18 +133,19 @@ class TestSyncDiffApplyRoundTrip:
         assert statuses.get("sys/homex.g") == "unchanged"
         assert statuses.get("macros/print_start.g") == "unchanged"
 
-    def test_apply_all_updates_printer(self, integration_env, printer_files):
+    def test_apply_all_updates_printer(self, integration_env):
         """apply_all should update printer files to match reference."""
         env = integration_env
+        pfs = env["printer_fs"]
         env["manager"].sync(env["repo_url"], "3.5")
         result = env["manager"].apply_all()
         assert "error" not in result
         assert "sys/config.g" in result["applied"]
 
         # Printer should now have 3.5 content
-        assert "M906 X1000 Y1000" in printer_files["0:/sys/config.g"]
+        assert "M906 X1000 Y1000" in _read_printer(pfs, "sys/config.g")
 
-    def test_apply_all_then_diff_shows_no_changes(self, integration_env, printer_files):
+    def test_apply_all_then_diff_shows_no_changes(self, integration_env):
         """After applying all, diff should show no changes."""
         env = integration_env
         env["manager"].sync(env["repo_url"], "3.5")
@@ -148,11 +155,12 @@ class TestSyncDiffApplyRoundTrip:
         for f in diff:
             assert f["status"] == "unchanged", f"Expected {f['file']} unchanged after apply"
 
-    def test_apply_hunks_partial(self, integration_env, printer_files):
+    def test_apply_hunks_partial(self, integration_env):
         """Apply only selected hunks from a file."""
         env = integration_env
-        # Modify printer config to have multiple differences
-        printer_files["0:/sys/config.g"] = "G28\nM584 X0 Y1\nM906 X800 Y800\n"
+        pfs = env["printer_fs"]
+        # Ensure printer has main content
+        (pfs / "sys" / "config.g").write_text("G28\nM584 X0 Y1\nM906 X800 Y800\n")
         env["manager"].sync(env["repo_url"], "3.5")
 
         # Get hunks for the file
@@ -164,7 +172,7 @@ class TestSyncDiffApplyRoundTrip:
         result = env["manager"].apply_hunks("sys/config.g", [0])
         assert len(result["applied"]) > 0
 
-    def test_backup_created_on_apply(self, integration_env, printer_files):
+    def test_backup_created_on_apply(self, integration_env):
         """Applying changes should create backup entries."""
         env = integration_env
         env["manager"].sync(env["repo_url"], "3.5")
@@ -173,14 +181,15 @@ class TestSyncDiffApplyRoundTrip:
         backups = env["manager"].get_backups()
         assert len(backups) >= 2  # Pre-update + post-update
 
-    def test_restore_backup_reverts_changes(self, integration_env, printer_files):
+    def test_restore_backup_reverts_changes(self, integration_env):
         """Restore should revert printer to backup state."""
         env = integration_env
-        original_config = printer_files["0:/sys/config.g"]
+        pfs = env["printer_fs"]
+        original_config = _read_printer(pfs, "sys/config.g")
 
         env["manager"].sync(env["repo_url"], "3.5")
         env["manager"].apply_all()
-        assert printer_files["0:/sys/config.g"] != original_config
+        assert _read_printer(pfs, "sys/config.g") != original_config
 
         # Get pre-update backup (the first one created)
         backups = env["manager"].get_backups()
@@ -191,9 +200,9 @@ class TestSyncDiffApplyRoundTrip:
         # Restore from that backup
         env["manager"].restore_backup(pre_update[0]["hash"])
         # git show strips trailing newline, so compare without it
-        assert printer_files["0:/sys/config.g"].rstrip("\n") == original_config.rstrip("\n")
+        assert _read_printer(pfs, "sys/config.g").rstrip("\n") == original_config.rstrip("\n")
 
-    def test_diff_file_detail(self, integration_env, printer_files):
+    def test_diff_file_detail(self, integration_env):
         """diff_file should return detailed hunks with unified diff."""
         env = integration_env
         env["manager"].sync(env["repo_url"], "3.5")
@@ -218,28 +227,31 @@ class TestSyncDiffApplyRoundTrip:
         assert "main" in branches
         assert "3.5" in branches
 
-    def test_missing_printer_file(self, integration_env, printer_files):
+    def test_missing_printer_file(self, integration_env):
         """When a printer file doesn't exist, diff should show 'missing'."""
         env = integration_env
-        del printer_files["0:/sys/homex.g"]
+        pfs = env["printer_fs"]
+        # Delete the printer file
+        (pfs / "sys" / "homex.g").unlink()
 
         env["manager"].sync(env["repo_url"], "3.5")
         diff = env["manager"].diff_all()
         statuses = {f["file"]: f["status"] for f in diff}
         assert statuses["sys/homex.g"] == "missing"
 
-    def test_apply_file_single(self, integration_env, printer_files):
+    def test_apply_file_single(self, integration_env):
         """apply_file should update only the specified file."""
         env = integration_env
+        pfs = env["printer_fs"]
         env["manager"].sync(env["repo_url"], "3.5")
 
-        original_homex = printer_files["0:/sys/homex.g"]
+        original_homex = _read_printer(pfs, "sys/homex.g")
         result = env["manager"].apply_file("sys/config.g")
         assert result == {"applied": ["sys/config.g"]}
-        assert "M906 X1000" in printer_files["0:/sys/config.g"]
-        assert printer_files["0:/sys/homex.g"] == original_homex
+        assert "M906 X1000" in _read_printer(pfs, "sys/config.g")
+        assert _read_printer(pfs, "sys/homex.g") == original_homex
 
-    def test_backup_download_is_zip(self, integration_env, printer_files):
+    def test_backup_download_is_zip(self, integration_env):
         """Backup download should return valid ZIP bytes."""
         env = integration_env
         env["manager"].sync(env["repo_url"], "3.5")
@@ -251,7 +263,7 @@ class TestSyncDiffApplyRoundTrip:
         archive = env["manager"].get_backup_download(backups[0]["hash"])
         assert archive[:2] == b"PK"
 
-    def test_backup_files_lists_contents(self, integration_env, printer_files):
+    def test_backup_files_lists_contents(self, integration_env):
         """get_backup_files should list files in a backup commit."""
         env = integration_env
         env["manager"].sync(env["repo_url"], "3.5")

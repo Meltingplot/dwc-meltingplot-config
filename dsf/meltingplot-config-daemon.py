@@ -403,9 +403,26 @@ def main():
     except Exception as exc:
         logger.warning("Could not read object model: %s", exc)
 
+    # Resolve virtual printer paths to real filesystem paths via DSF.
+    # e.g. "0:/sys/" -> "/opt/dsf/sd/sys/"
+    from config_manager import DEFAULT_DIRECTORY_MAP
+    effective_dir_map = dir_map if dir_map else DEFAULT_DIRECTORY_MAP
+    resolved_dirs = {}
+    for ref_folder, printer_prefix in effective_dir_map.items():
+        try:
+            # resolve_path wants a path without trailing slash
+            real_path = cmd.resolve_path(printer_prefix.rstrip("/"))
+            if not real_path.endswith("/"):
+                real_path += "/"
+            resolved_dirs[printer_prefix] = real_path
+            logger.info("Resolved %s -> %s", printer_prefix, real_path)
+        except Exception as exc:
+            logger.warning("Could not resolve %s: %s", printer_prefix, exc)
+
     manager = ConfigManager(
         dsf_command_connection=cmd,
         directory_map=dir_map if dir_map else None,
+        resolved_dirs=resolved_dirs if resolved_dirs else None,
     )
 
     # Register HTTP endpoints (each runs in its own async handler thread)

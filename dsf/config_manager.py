@@ -46,28 +46,57 @@ DEFAULT_DIRECTORY_MAP = {
 class ConfigManager:
     """Manages reference sync, diffing, applying, and backups."""
 
-    def __init__(self, dsf_command_connection=None, directory_map=None):
+    # Default resolved directory mapping (SBC standard layout).
+    DEFAULT_RESOLVED_DIRS = {
+        "0:/sys/": "/opt/dsf/sd/sys/",
+        "0:/macros/": "/opt/dsf/sd/macros/",
+        "0:/filaments/": "/opt/dsf/sd/filaments/",
+        "0:/firmware/": "/opt/dsf/sd/firmware/",
+        "0:/gcodes/": "/opt/dsf/sd/gcodes/",
+        "0:/menu/": "/opt/dsf/sd/menu/",
+        "0:/www/": "/opt/dsf/sd/www/",
+    }
+
+    def __init__(self, dsf_command_connection=None, directory_map=None, resolved_dirs=None):
         self._dsf = dsf_command_connection
         self._dir_map = directory_map if directory_map is not None else DEFAULT_DIRECTORY_MAP
+        self._resolved_dirs = resolved_dirs if resolved_dirs is not None else self.DEFAULT_RESOLVED_DIRS
         init_backup_repo(BACKUP_DIR)
 
-    # --- File I/O via DSF ---
+    # --- File I/O via resolved filesystem paths ---
+
+    def _printer_to_fs_path(self, printer_path):
+        """Convert a virtual printer path to a real filesystem path.
+
+        Uses resolved_dirs (populated at startup via DSF resolve_path)
+        to map e.g. '0:/sys/config.g' -> '/opt/dsf/sd/sys/config.g'.
+        """
+        for printer_prefix, fs_prefix in self._resolved_dirs.items():
+            if printer_path.startswith(printer_prefix):
+                return fs_prefix + printer_path[len(printer_prefix):]
+        return None
 
     def _read_printer_file(self, printer_path):
-        """Read a file from the printer via DSF file API."""
-        if self._dsf is None:
-            raise RuntimeError("No DSF connection")
+        """Read a file from the printer filesystem."""
+        fs_path = self._printer_to_fs_path(printer_path)
+        if fs_path is None:
+            logger.debug("Cannot resolve printer path: %s", printer_path)
+            return None
         try:
-            return self._dsf.get_file(printer_path)
-        except Exception as exc:
-            logger.debug("Cannot read %s: %s", printer_path, exc)
+            with open(fs_path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except (FileNotFoundError, IOError) as exc:
+            logger.debug("Cannot read %s (%s): %s", printer_path, fs_path, exc)
             return None
 
     def _write_printer_file(self, printer_path, content):
-        """Write a file to the printer via DSF file API."""
-        if self._dsf is None:
-            raise RuntimeError("No DSF connection")
-        self._dsf.put_file(printer_path, content)
+        """Write a file to the printer filesystem."""
+        fs_path = self._printer_to_fs_path(printer_path)
+        if fs_path is None:
+            raise RuntimeError(f"Cannot resolve printer path: {printer_path}")
+        os.makedirs(os.path.dirname(fs_path), exist_ok=True)
+        with open(fs_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
     def _read_reference_file(self, rel_path):
         """Read a file from the local reference repository."""

@@ -152,3 +152,23 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 - Prefer editing existing files over creating new ones.
 - Do not add unnecessary abstractions or over-engineer solutions.
 - Keep this CLAUDE.md updated as the project evolves.
+
+### Verifying upstream APIs
+
+The dsf-python, DuetWebControl, and DuetSoftwareFramework libraries are **not installed locally** — they run on the printer's SBC or are used only at build time. When writing code that interacts with these libraries:
+
+1. **Do not guess API patterns.** Clone the upstream repo to `/tmp/` and read the actual source:
+   ```bash
+   git clone --branch v3.6-dev --depth 1 https://github.com/Duet3D/dsf-python.git /tmp/dsf-python
+   ```
+2. **Check the actual class definitions** before using any property or method. Key locations in dsf-python:
+   - `src/dsf/object_model/object_model.py` — `ObjectModel` class (top-level: `.boards`, `.plugins`, `.state`, etc.)
+   - `src/dsf/object_model/boards/boards.py` — `Board` class (`.firmware_version`, `.name`, `.short_name`, etc.)
+   - `src/dsf/object_model/plugins/plugin_manifest.py` — `PluginManifest` (`.data`, `.id`, `.version`, etc.)
+   - `src/dsf/object_model/plugins/plugins.py` — `Plugin` extends `PluginManifest` (`.pid`, `.dsf_files`, etc.)
+   - `src/dsf/object_model/model_dictionary.py` — `ModelDictionary(dict)` (used for `.plugins`, `.globals`)
+3. **Common pitfall:** dsf-python converts JSON camelCase to Python snake_case automatically (e.g., `firmwareVersion` → `firmware_version`). The JSON wire format and the Python API use different naming conventions.
+4. **For DWC frontend APIs**, check the DuetWebControl source for store structure, plugin registration API, and component patterns:
+   ```bash
+   git clone --branch v3.6-dev --depth 1 https://github.com/Duet3D/DuetWebControl.git /tmp/DuetWebControl
+   ```

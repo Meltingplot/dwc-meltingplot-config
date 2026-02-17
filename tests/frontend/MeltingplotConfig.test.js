@@ -5,14 +5,14 @@ import MeltingplotConfig from '../../src/MeltingplotConfig.vue';
 const localVue = createLocalVue();
 localVue.use(Vuex);
 
-function createStore(sbcData = {}) {
+function createStore(pluginData = {}) {
     return new Vuex.Store({
         modules: {
             'machine/model': {
                 namespaced: true,
                 state: {
                     plugins: {
-                        MeltingplotConfig: sbcData
+                        MeltingplotConfig: { data: pluginData }
                     }
                 }
             }
@@ -21,7 +21,7 @@ function createStore(sbcData = {}) {
 }
 
 function mountComponent(options = {}) {
-    const store = createStore(options.sbcData || {});
+    const store = createStore(options.pluginData || {});
     // Stub child components to avoid rendering them
     return shallowMount(MeltingplotConfig, {
         localVue,
@@ -91,7 +91,7 @@ describe('MeltingplotConfig', () => {
         it('extracts data from vuex store', () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent({
-                sbcData: {
+                pluginData: {
                     referenceRepoUrl: 'https://example.com/repo.git',
                     detectedFirmwareVersion: '3.5.1',
                     activeBranch: '3.5',
@@ -106,7 +106,7 @@ describe('MeltingplotConfig', () => {
 
         it('provides safe defaults when plugin data missing', () => {
             mockFetchSuccess({ branches: [] });
-            const wrapper = mountComponent({ sbcData: {} });
+            const wrapper = mountComponent({ pluginData: {} });
             expect(wrapper.vm.pluginData.referenceRepoUrl).toBe('');
             expect(wrapper.vm.pluginData.status).toBe('not_configured');
         });

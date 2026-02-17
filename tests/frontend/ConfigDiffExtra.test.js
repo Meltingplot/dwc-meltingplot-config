@@ -47,17 +47,42 @@ describe('ConfigDiff — loadFileDetail', () => {
             expect(file.loadingDetail).toBe(false);
         });
 
-        it('skips fetch if hunks already loaded', async () => {
+        it('skips fetch if hunks already have lines (detail loaded)', async () => {
             const wrapper = mountComponent();
             const file = {
                 file: 'sys/config.g',
                 status: 'modified',
-                hunks: [{ index: 0, selected: true }]
+                hunks: [{ index: 0, lines: [' ctx', '-old', '+new'], selected: true }]
             };
 
             global.fetch = jest.fn();
             await wrapper.vm.loadFileDetail(file);
             expect(global.fetch).not.toHaveBeenCalled();
+        });
+
+        it('fetches detail when hunks exist but have no lines (summary only)', async () => {
+            const wrapper = mountComponent();
+            const file = {
+                file: 'sys/config.g',
+                status: 'modified',
+                hunks: [{ index: 0, header: '@@ -1,3 +1,3 @@' }]
+            };
+
+            global.fetch = jest.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        hunks: [
+                            { index: 0, header: '@@ -1,3 +1,3 @@', lines: [' ctx', '-old', '+new'], summary: 'Line 1' }
+                        ]
+                    })
+                })
+            );
+
+            await wrapper.vm.loadFileDetail(file);
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(file.hunks[0].lines).toBeDefined();
+            expect(file.hunks[0].selected).toBe(true);
         });
 
         it('skips fetch for non-modified files', async () => {

@@ -220,20 +220,41 @@ class TestComputeHunks:
 
 
 class TestRefToPrinterPath:
+    def _make_manager(self):
+        return ConfigManager.__new__(ConfigManager)
+
     def test_sys_path(self):
-        assert ConfigManager._ref_to_printer_path("sys/config.g") == "0:/sys/config.g"
+        mgr = self._make_manager()
+        mgr._dir_map = {"sys/": "0:/sys/"}
+        assert mgr._ref_to_printer_path("sys/config.g") == "0:/sys/config.g"
 
     def test_macros_path(self):
-        assert ConfigManager._ref_to_printer_path("macros/print_start.g") == "0:/macros/print_start.g"
+        mgr = self._make_manager()
+        mgr._dir_map = {"macros/": "0:/macros/"}
+        assert mgr._ref_to_printer_path("macros/print_start.g") == "0:/macros/print_start.g"
 
     def test_filaments_path(self):
-        assert ConfigManager._ref_to_printer_path("filaments/PLA/config.g") == "0:/filaments/PLA/config.g"
+        mgr = self._make_manager()
+        mgr._dir_map = {"filaments/": "0:/filaments/"}
+        assert mgr._ref_to_printer_path("filaments/PLA/config.g") == "0:/filaments/PLA/config.g"
 
     def test_unknown_path(self):
-        assert ConfigManager._ref_to_printer_path("unknown/file.g") is None
+        mgr = self._make_manager()
+        mgr._dir_map = {"sys/": "0:/sys/"}
+        assert mgr._ref_to_printer_path("unknown/file.g") is None
 
     def test_nested_sys(self):
-        assert ConfigManager._ref_to_printer_path("sys/sub/deep.g") == "0:/sys/sub/deep.g"
+        mgr = self._make_manager()
+        mgr._dir_map = {"sys/": "0:/sys/"}
+        assert mgr._ref_to_printer_path("sys/sub/deep.g") == "0:/sys/sub/deep.g"
+
+    def test_custom_directory_map(self):
+        """Directory map from DSF object model can have non-default mappings."""
+        mgr = self._make_manager()
+        mgr._dir_map = {"gcodes/": "0:/gcodes/", "www/": "0:/www/"}
+        assert mgr._ref_to_printer_path("gcodes/job.gcode") == "0:/gcodes/job.gcode"
+        assert mgr._ref_to_printer_path("www/index.html") == "0:/www/index.html"
+        assert mgr._ref_to_printer_path("sys/config.g") is None
 
 
 # --- Integration: diff + apply hunks round-trip ---

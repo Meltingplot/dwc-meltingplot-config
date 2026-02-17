@@ -98,15 +98,14 @@ class TestHandlers:
         manager = MagicMock()
         manager.get_branches.return_value = ["main"]
 
-        plugin = SimpleNamespace(data={
-            "status": "up_to_date",
-            "detectedFirmwareVersion": "3.5",
-            "activeBranch": "3.5",
-            "referenceRepoUrl": "https://example.com",
-            "lastSyncTimestamp": "2026-01-01T00:00:00",
-        })
         cmd.get_object_model.return_value = SimpleNamespace(
-            plugins={"MeltingplotConfig": plugin}
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "status": "up_to_date",
+                "detectedFirmwareVersion": "3.5",
+                "activeBranch": "3.5",
+                "referenceRepoUrl": "https://example.com",
+                "lastSyncTimestamp": "2026-01-01T00:00:00",
+            })}
         )
 
         resp = daemon.handle_status(cmd, manager, "", {})

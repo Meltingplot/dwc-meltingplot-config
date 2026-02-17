@@ -20,7 +20,7 @@
   ],
   "sbcPackageDependencies": ["git"],
   "sbcPythonDependencies": ["dsf-python"],
-  "sbcData": {
+  "data": {
     "referenceRepoUrl": "",
     "firmwareBranchOverride": "",
     "detectedFirmwareVersion": "",

@@ -190,7 +190,12 @@ export default {
   computed: {
     ...mapState('machine/model', {
       pluginData(state) {
-        const data = state.plugins?.MeltingplotConfig || {}
+        // In DWC 3.6, state.plugins is a Map keyed by plugin ID.
+        // Each entry is a full Plugin object; custom data lives in plugin.data.
+        const plugin = state.plugins instanceof Map
+          ? state.plugins.get('MeltingplotConfig')
+          : state.plugins?.['MeltingplotConfig']
+        const data = plugin?.data || {}
         return {
           referenceRepoUrl: data.referenceRepoUrl || '',
           firmwareBranchOverride: data.firmwareBranchOverride || '',

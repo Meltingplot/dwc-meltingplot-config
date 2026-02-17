@@ -67,7 +67,9 @@ class TestGetPluginData:
     def test_returns_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        plugin = SimpleNamespace(data={"status": "up_to_date", "activeBranch": "3.5"})
+        plugin = SimpleNamespace(data={
+            "status": "up_to_date", "activeBranch": "3.5"
+        })
         cmd.get_object_model.return_value = SimpleNamespace(
             plugins={"MeltingplotConfig": plugin}
         )
@@ -89,7 +91,7 @@ class TestGetPluginData:
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
-    def test_returns_empty_dict_when_no_plugins_attr(self):
+    def test_returns_empty_dict_when_no_plugins_key(self):
         daemon = _import_daemon()
         cmd = MagicMock()
         cmd.get_object_model.return_value = SimpleNamespace()
@@ -109,7 +111,7 @@ class TestSetPluginData:
         daemon = _import_daemon()
         cmd = MagicMock()
         daemon.set_plugin_data(cmd, "activeBranch", "3.5")
-        cmd.set_plugin_data.assert_called_once_with("activeBranch", "3.5", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_called_once_with("MeltingplotConfig", "activeBranch", "3.5")
 
     def test_logs_warning_on_failure(self):
         daemon = _import_daemon()
@@ -126,13 +128,12 @@ class TestHandleSync:
     def test_sync_success_updates_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        plugin = SimpleNamespace(data={
-            "referenceRepoUrl": "https://example.com/repo.git",
-            "detectedFirmwareVersion": "3.5.1",
-            "firmwareBranchOverride": "",
-        })
         cmd.get_object_model.return_value = SimpleNamespace(
-            plugins={"MeltingplotConfig": plugin}
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "https://example.com/repo.git",
+                "detectedFirmwareVersion": "3.5.1",
+                "firmwareBranchOverride": "",
+            })}
         )
         manager = MagicMock()
         manager.sync.return_value = {
@@ -150,9 +151,9 @@ class TestHandleSync:
         manager.sync.assert_called_once_with(
             "https://example.com/repo.git", "3.5.1", branch_override=""
         )
-        # Verify plugin data updates
+        # Verify plugin data updates (arg order: plugin_id, key, value)
         calls = cmd.set_plugin_data.call_args_list
-        keys_set = [c[0][0] for c in calls]
+        keys_set = [c[0][1] for c in calls]
         assert "activeBranch" in keys_set
         assert "lastSyncTimestamp" in keys_set
         assert "status" in keys_set
@@ -160,11 +161,10 @@ class TestHandleSync:
     def test_sync_error_returns_400(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        plugin = SimpleNamespace(data={
-            "referenceRepoUrl": "", "detectedFirmwareVersion": "", "firmwareBranchOverride": ""
-        })
         cmd.get_object_model.return_value = SimpleNamespace(
-            plugins={"MeltingplotConfig": plugin}
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "", "detectedFirmwareVersion": "", "firmwareBranchOverride": ""
+            })}
         )
         manager = MagicMock()
         manager.sync.return_value = {"error": "No reference repository URL configured"}
@@ -177,13 +177,12 @@ class TestHandleSync:
     def test_sync_passes_branch_override(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        plugin = SimpleNamespace(data={
-            "referenceRepoUrl": "https://example.com/repo.git",
-            "detectedFirmwareVersion": "3.5.1",
-            "firmwareBranchOverride": "custom-branch",
-        })
         cmd.get_object_model.return_value = SimpleNamespace(
-            plugins={"MeltingplotConfig": plugin}
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "https://example.com/repo.git",
+                "detectedFirmwareVersion": "3.5.1",
+                "firmwareBranchOverride": "custom-branch",
+            })}
         )
         manager = MagicMock()
         manager.sync.return_value = {
@@ -329,7 +328,7 @@ class TestHandleSettings:
         body = json.dumps({"referenceRepoUrl": "https://new.example.com/repo.git"})
         resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
-        cmd.set_plugin_data.assert_any_call("referenceRepoUrl", "https://new.example.com/repo.git", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "referenceRepoUrl", "https://new.example.com/repo.git")
 
     def test_settings_sets_branch_override(self):
         daemon = _import_daemon()
@@ -339,7 +338,7 @@ class TestHandleSettings:
         body = json.dumps({"firmwareBranchOverride": "custom"})
         resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
-        cmd.set_plugin_data.assert_any_call("firmwareBranchOverride", "custom", "MeltingplotConfig")
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "firmwareBranchOverride", "custom")
 
     def test_settings_invalid_json(self):
         daemon = _import_daemon()
@@ -492,3 +491,79 @@ class TestFirmwareDetection:
         boards = getattr(model, "boards", None) or []
         fw = getattr(boards[0], "firmware_version", "") or ""
         assert fw == ""
+
+
+# --- build_directory_map ---
+
+
+class TestBuildDirectoryMap:
+    """Tests for build_directory_map which reads model.directories."""
+
+    def test_builds_map_from_directories(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments="0:/filaments",
+            firmware="0:/firmware",
+            g_codes="0:/gcodes",
+            macros="0:/macros",
+            menu="0:/menu",
+            system="0:/sys",
+            web="0:/www",
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert result == {
+            "filaments/": "0:/filaments/",
+            "firmware/": "0:/firmware/",
+            "gcodes/": "0:/gcodes/",
+            "macros/": "0:/macros/",
+            "menu/": "0:/menu/",
+            "sys/": "0:/sys/",
+            "www/": "0:/www/",
+        }
+
+    def test_handles_trailing_slashes(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments="0:/filaments/",
+            firmware="0:/firmware/",
+            g_codes="0:/gcodes/",
+            macros="0:/macros/",
+            menu="0:/menu/",
+            system="0:/sys/",
+            web="0:/www/",
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert result["sys/"] == "0:/sys/"
+        assert result["macros/"] == "0:/macros/"
+
+    def test_missing_directories_attr(self):
+        daemon = _import_daemon()
+        model = SimpleNamespace()
+        result = daemon.build_directory_map(model)
+        assert result == {}
+
+    def test_none_directories(self):
+        daemon = _import_daemon()
+        model = SimpleNamespace(directories=None)
+        result = daemon.build_directory_map(model)
+        assert result == {}
+
+    def test_skips_none_values(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments=None,
+            firmware="0:/firmware",
+            g_codes=None,
+            macros="0:/macros",
+            menu=None,
+            system="0:/sys",
+            web=None,
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert "sys/" in result
+        assert "macros/" in result
+        assert "firmware/" in result
+        assert len(result) == 3

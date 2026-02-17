@@ -17,6 +17,24 @@ from dsf.connections import CommandConnection
 from dsf.http import HttpEndpointConnection, HttpResponseType
 from dsf.object_model import HttpEndpointType
 
+# Monkey-patch dsf-python: PluginManifest._data is a plain dict which
+# _update_from_json silently skips.  Replace it with ModelDictionary(False)
+# so deserialization populates plugin.data correctly.
+# See: https://github.com/Duet3D/dsf-python/issues/XXX
+try:
+    from dsf.object_model.plugins.plugin_manifest import PluginManifest as _PM
+    from dsf.object_model.model_dictionary import ModelDictionary as _MD
+
+    _original_pm_init = _PM.__init__
+
+    def _patched_pm_init(self):
+        _original_pm_init(self)
+        self._data = _MD(False)
+
+    _PM.__init__ = _patched_pm_init
+except ImportError:
+    pass  # dsf not installed (e.g. test environment)
+
 from config_manager import ConfigManager
 
 logging.basicConfig(
@@ -30,16 +48,52 @@ PLUGIN_ID = "MeltingplotConfig"
 API_NAMESPACE = "MeltingplotConfig"
 
 
+# --- Directory mapping from DSF object model ---
+
+# Known directory property names on the DSF Directories object (snake_case).
+_DIR_ATTRS = ["filaments", "firmware", "g_codes", "macros", "menu", "system", "web"]
+
+
+def build_directory_map(model):
+    """Build a ref-folder → printer-path mapping from the DSF object model.
+
+    Reads model.directories (a typed Directories object with properties like
+    'system' → '0:/sys', 'macros' → '0:/macros', etc.) and produces a dict
+    mapping reference repo top-level folders to full printer paths:
+        {'sys/': '0:/sys/', 'macros/': '0:/macros/', ...}
+    """
+    dirs = getattr(model, "directories", None)
+    if dirs is None:
+        return {}
+
+    dir_map = {}
+    for attr in _DIR_ATTRS:
+        dsf_path = getattr(dirs, attr, None)
+        if not dsf_path or not isinstance(dsf_path, str):
+            continue
+        # Ensure trailing slash: "0:/sys" -> "0:/sys/"
+        if not dsf_path.endswith("/"):
+            dsf_path += "/"
+        # Extract folder name after volume prefix: "0:/sys/" -> "sys/"
+        if ":/" in dsf_path:
+            ref_folder = dsf_path.split(":/", 1)[1]
+        else:
+            ref_folder = dsf_path
+        if ref_folder:
+            dir_map[ref_folder] = dsf_path
+
+    return dir_map
+
+
 # --- Plugin data helpers ---
 
 
 def get_plugin_data(cmd):
     """Read plugin data from the DSF object model.
 
-    The DSF ObjectModel uses attribute access (not dict-style .get()).
-    model.plugins is a ModelDictionary (dict subclass) keyed by plugin ID.
-    Each Plugin has a .data dict holding custom key-value pairs set via
-    CommandConnection.set_plugin_data().
+    Relies on the monkey-patch above that changes PluginManifest._data
+    from a plain dict to ModelDictionary(False), so _update_from_json
+    populates it correctly.
     """
     try:
         model = cmd.get_object_model()
@@ -48,17 +102,15 @@ def get_plugin_data(cmd):
         if plugin is None:
             return {}
         data = getattr(plugin, "data", None)
-        if isinstance(data, dict):
-            return data
-        return {}
+        return dict(data) if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
 def set_plugin_data(cmd, key, value):
-    """Update a single field in plugin sbcData."""
+    """Update a single field in plugin data."""
     try:
-        cmd.set_plugin_data(key, value, PLUGIN_ID)
+        cmd.set_plugin_data(PLUGIN_ID, key, value)
     except Exception as exc:
         logger.warning("Failed to set plugin data %s=%s: %s", key, value, exc)
 
@@ -329,22 +381,49 @@ def main():
     cmd.connect()
     logger.info("Connected to DSF")
 
-    # Detect firmware version on startup
-    # The DSF ObjectModel uses attribute access with snake_case names:
-    #   model.boards -> list of Board objects
-    #   board.firmware_version -> str
+    # Read object model once at startup for firmware version + directory mappings
+    dir_map = None
     try:
         model = cmd.get_object_model()
+
+        # Detect firmware version
         boards = getattr(model, "boards", None) or []
         if boards:
             fw = getattr(boards[0], "firmware_version", "") or ""
             if fw:
                 set_plugin_data(cmd, "detectedFirmwareVersion", fw)
                 logger.info("Detected firmware version: %s", fw)
-    except Exception as exc:
-        logger.warning("Could not detect firmware version: %s", exc)
 
-    manager = ConfigManager(dsf_command_connection=cmd)
+        # Build directory mapping from object model
+        dir_map = build_directory_map(model)
+        if dir_map:
+            logger.info("Directory mappings from DSF: %s", dir_map)
+        else:
+            logger.warning("No directory mappings from DSF, using defaults")
+    except Exception as exc:
+        logger.warning("Could not read object model: %s", exc)
+
+    # Resolve virtual printer paths to real filesystem paths via DSF.
+    # e.g. "0:/sys/" -> "/opt/dsf/sd/sys/"
+    from config_manager import DEFAULT_DIRECTORY_MAP
+    effective_dir_map = dir_map if dir_map else DEFAULT_DIRECTORY_MAP
+    resolved_dirs = {}
+    for ref_folder, printer_prefix in effective_dir_map.items():
+        try:
+            # resolve_path wants a path without trailing slash
+            real_path = cmd.resolve_path(printer_prefix.rstrip("/"))
+            if not real_path.endswith("/"):
+                real_path += "/"
+            resolved_dirs[printer_prefix] = real_path
+            logger.info("Resolved %s -> %s", printer_prefix, real_path)
+        except Exception as exc:
+            logger.warning("Could not resolve %s: %s", printer_prefix, exc)
+
+    manager = ConfigManager(
+        dsf_command_connection=cmd,
+        directory_map=dir_map if dir_map else None,
+        resolved_dirs=resolved_dirs if resolved_dirs else None,
+    )
 
     # Register HTTP endpoints (each runs in its own async handler thread)
     endpoints = register_endpoints(cmd, manager)

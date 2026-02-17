@@ -73,11 +73,24 @@
                   <code class="hunk-range">{{ hunk.header }}</code>
                   <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
                 </div>
-                <pre class="hunk-content pa-2"><code
-                  v-for="(line, i) in hunk.lines"
-                  :key="i"
-                  :class="lineClass(line)"
-                >{{ line }}</code></pre>
+                <table class="diff-table">
+                  <thead>
+                    <tr>
+                      <th class="diff-col-header diff-col-left">Current (Printer)</th>
+                      <th class="diff-col-header diff-col-right">Reference (New)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, i) in sideBySideLines(hunk)" :key="i">
+                      <td :class="['diff-cell', row.leftClass]">
+                        <code v-if="row.left !== null">{{ row.left }}</code>
+                      </td>
+                      <td :class="['diff-cell', row.rightClass]">
+                        <code v-if="row.right !== null">{{ row.right }}</code>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -137,13 +150,50 @@ export default {
     fileStatusIcon(status) {
       return (FILE_STATUS[status] || FILE_STATUS.modified).icon
     },
-    lineClass(line) {
-      if (line.startsWith('+')) return 'diff-add'
-      if (line.startsWith('-')) return 'diff-remove'
-      return 'diff-context'
+    sideBySideLines(hunk) {
+      if (!hunk.lines) return []
+      const rows = []
+      const removes = []
+      const adds = []
+
+      const flushPairs = () => {
+        const max = Math.max(removes.length, adds.length)
+        for (let i = 0; i < max; i++) {
+          rows.push({
+            left: i < removes.length ? removes[i].substring(1) : null,
+            leftClass: i < removes.length ? 'diff-remove' : 'diff-empty',
+            right: i < adds.length ? adds[i].substring(1) : null,
+            rightClass: i < adds.length ? 'diff-add' : 'diff-empty'
+          })
+        }
+        removes.length = 0
+        adds.length = 0
+      }
+
+      for (const line of hunk.lines) {
+        if (line.startsWith('-')) {
+          removes.push(line)
+        } else if (line.startsWith('+')) {
+          adds.push(line)
+        } else {
+          flushPairs()
+          const text = line.startsWith(' ') ? line.substring(1) : line
+          rows.push({
+            left: text,
+            leftClass: 'diff-context',
+            right: text,
+            rightClass: 'diff-context'
+          })
+        }
+      }
+      flushPairs()
+      return rows
     },
     async loadFileDetail(file) {
-      if (file.hunks || file.status !== 'modified') return
+      if (file.status !== 'modified') return
+      // diff_all returns summary hunks (index + header only).
+      // Skip fetch only if full detail (lines) is already loaded.
+      if (file.hunks && file.hunks.length > 0 && file.hunks[0].lines) return
       this.$set(file, 'loadingDetail', true)
       try {
         const response = await fetch(`${API_BASE}/diff?file=${encodeURIComponent(file.file)}`)
@@ -192,26 +242,65 @@ export default {
   font-size: 0.8em;
   color: #7b1fa2;
 }
-.hunk-content {
-  margin: 0;
-  background-color: #fafafa;
-  overflow-x: auto;
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
   font-size: 0.85em;
   line-height: 1.5;
 }
-.hunk-content code {
-  display: block;
-  white-space: pre;
+.diff-col-header {
+  width: 50%;
+  padding: 4px 8px;
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e0e0e0;
 }
-.diff-add {
+.diff-col-left {
+  background-color: #fff3e0;
+  color: #e65100;
+  border-right: 1px solid #e0e0e0;
+}
+.diff-col-right {
   background-color: #e8f5e9;
-  color: #2e7d32;
+  color: #1b5e20;
 }
-.diff-remove {
+.diff-cell {
+  width: 50%;
+  padding: 1px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+}
+.diff-cell code {
+  white-space: pre;
+  font-size: inherit;
+  word-break: break-all;
+}
+.diff-cell.diff-remove {
   background-color: #ffebee;
-  color: #c62828;
+  border-right: 1px solid #e0e0e0;
 }
-.diff-context {
+.diff-cell.diff-remove code {
+  color: #b71c1c;
+}
+.diff-cell.diff-add {
+  background-color: #e8f5e9;
+}
+.diff-cell.diff-add code {
+  color: #1b5e20;
+}
+.diff-cell.diff-context {
+  background-color: #fafafa;
+  border-right: 1px solid #e0e0e0;
   color: #616161;
+}
+.diff-cell.diff-context code {
+  color: #616161;
+}
+.diff-cell.diff-empty {
+  background-color: #f5f5f5;
+  border-right: 1px solid #e0e0e0;
 }
 </style>

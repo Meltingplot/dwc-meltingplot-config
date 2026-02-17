@@ -7,14 +7,14 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 const localVue = createLocalVue()
 localVue.use(Vuex)
 
-function createStore(sbcData = {}) {
+function createStore(pluginData = {}) {
   return new Vuex.Store({
     modules: {
       'machine/model': {
         namespaced: true,
         state: {
           plugins: {
-            MeltingplotConfig: sbcData
+            MeltingplotConfig: { data: pluginData }
           }
         }
       }

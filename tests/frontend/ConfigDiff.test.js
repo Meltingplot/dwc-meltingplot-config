@@ -278,6 +278,23 @@ describe('ConfigDiff', () => {
     })
   })
 
+  describe('expandedPanels reset', () => {
+    it('resets expandedPanels when files prop changes', async () => {
+      const files = [
+        { file: 'sys/config.g', status: 'modified', hunks: [] },
+        { file: 'sys/homex.g', status: 'missing', hunks: [] }
+      ]
+      const wrapper = mountComponent({ files })
+      wrapper.vm.expandedPanels = [0, 1]
+      expect(wrapper.vm.expandedPanels).toEqual([0, 1])
+
+      await wrapper.setProps({
+        files: [{ file: 'sys/config.g', status: 'modified', hunks: [] }]
+      })
+      expect(wrapper.vm.expandedPanels).toEqual([])
+    })
+  })
+
   describe('hunk selection edge cases', () => {
     it('selectAllHunks does nothing when hunks is undefined', () => {
       const wrapper = mountComponent()

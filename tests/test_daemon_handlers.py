@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import types
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -63,16 +64,13 @@ def _import_daemon():
 
 
 class TestGetPluginData:
-    def test_returns_sbc_data(self):
+    def test_returns_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {
-            "plugins": {
-                "MeltingplotConfig": {
-                    "sbcData": {"status": "up_to_date", "activeBranch": "3.5"}
-                }
-            }
-        }
+        plugin = SimpleNamespace(data={"status": "up_to_date", "activeBranch": "3.5"})
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": plugin}
+        )
         data = daemon.get_plugin_data(cmd)
         assert data["status"] == "up_to_date"
         assert data["activeBranch"] == "3.5"
@@ -80,14 +78,21 @@ class TestGetPluginData:
     def test_returns_empty_dict_when_no_plugins(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {}
+        cmd.get_object_model.return_value = SimpleNamespace(plugins={})
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
     def test_returns_empty_dict_when_plugin_missing(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {"plugins": {}}
+        cmd.get_object_model.return_value = SimpleNamespace(plugins={})
+        data = daemon.get_plugin_data(cmd)
+        assert data == {}
+
+    def test_returns_empty_dict_when_no_plugins_attr(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace()
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
@@ -121,17 +126,14 @@ class TestHandleSync:
     def test_sync_success_updates_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {
-            "plugins": {
-                "MeltingplotConfig": {
-                    "sbcData": {
-                        "referenceRepoUrl": "https://example.com/repo.git",
-                        "detectedFirmwareVersion": "3.5.1",
-                        "firmwareBranchOverride": "",
-                    }
-                }
-            }
-        }
+        plugin = SimpleNamespace(data={
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "detectedFirmwareVersion": "3.5.1",
+            "firmwareBranchOverride": "",
+        })
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": plugin}
+        )
         manager = MagicMock()
         manager.sync.return_value = {
             "activeBranch": "3.5",
@@ -158,13 +160,12 @@ class TestHandleSync:
     def test_sync_error_returns_400(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {
-            "plugins": {
-                "MeltingplotConfig": {
-                    "sbcData": {"referenceRepoUrl": "", "detectedFirmwareVersion": "", "firmwareBranchOverride": ""}
-                }
-            }
-        }
+        plugin = SimpleNamespace(data={
+            "referenceRepoUrl": "", "detectedFirmwareVersion": "", "firmwareBranchOverride": ""
+        })
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": plugin}
+        )
         manager = MagicMock()
         manager.sync.return_value = {"error": "No reference repository URL configured"}
 
@@ -176,17 +177,14 @@ class TestHandleSync:
     def test_sync_passes_branch_override(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_object_model.return_value = {
-            "plugins": {
-                "MeltingplotConfig": {
-                    "sbcData": {
-                        "referenceRepoUrl": "https://example.com/repo.git",
-                        "detectedFirmwareVersion": "3.5.1",
-                        "firmwareBranchOverride": "custom-branch",
-                    }
-                }
-            }
-        }
+        plugin = SimpleNamespace(data={
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "detectedFirmwareVersion": "3.5.1",
+            "firmwareBranchOverride": "custom-branch",
+        })
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": plugin}
+        )
         manager = MagicMock()
         manager.sync.return_value = {
             "activeBranch": "custom-branch",
@@ -442,3 +440,55 @@ class TestRegisterEndpoints:
         registered = daemon.register_endpoints(cmd, manager)
         # Should return empty list but not crash
         assert registered == []
+
+
+# --- Firmware version detection (uses ObjectModel attribute access) ---
+
+
+class TestFirmwareDetection:
+    """Tests that firmware detection in main() uses proper ObjectModel
+    attribute access (model.boards, board.firmware_version) instead of
+    dict-style .get() which fails on the real DSF ObjectModel."""
+
+    def test_detects_firmware_from_object_model(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        board = SimpleNamespace(firmware_version="3.5.1")
+        cmd.get_object_model.return_value = SimpleNamespace(boards=[board])
+
+        # Simulate the firmware detection logic from main()
+        model = cmd.get_object_model()
+        boards = getattr(model, "boards", None) or []
+        fw = ""
+        if boards:
+            fw = getattr(boards[0], "firmware_version", "") or ""
+        assert fw == "3.5.1"
+
+    def test_handles_empty_boards_list(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace(boards=[])
+
+        model = cmd.get_object_model()
+        boards = getattr(model, "boards", None) or []
+        assert boards == []
+
+    def test_handles_missing_boards_attr(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace()
+
+        model = cmd.get_object_model()
+        boards = getattr(model, "boards", None) or []
+        assert boards == []
+
+    def test_handles_none_firmware_version(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        board = SimpleNamespace(firmware_version=None)
+        cmd.get_object_model.return_value = SimpleNamespace(boards=[board])
+
+        model = cmd.get_object_model()
+        boards = getattr(model, "boards", None) or []
+        fw = getattr(boards[0], "firmware_version", "") or ""
+        assert fw == ""

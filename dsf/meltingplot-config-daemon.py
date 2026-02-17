@@ -34,12 +34,23 @@ API_NAMESPACE = "MeltingplotConfig"
 
 
 def get_plugin_data(cmd):
-    """Read plugin sbcData from the DSF object model."""
+    """Read plugin data from the DSF object model.
+
+    The DSF ObjectModel uses attribute access (not dict-style .get()).
+    model.plugins is a ModelDictionary (dict subclass) keyed by plugin ID.
+    Each Plugin has a .data dict holding custom key-value pairs set via
+    CommandConnection.set_plugin_data().
+    """
     try:
         model = cmd.get_object_model()
-        plugins = model.get("plugins", {})
-        plugin = plugins.get(PLUGIN_ID, {})
-        return plugin.get("sbcData", {})
+        plugins = getattr(model, "plugins", None) or {}
+        plugin = plugins.get(PLUGIN_ID) if isinstance(plugins, dict) else None
+        if plugin is None:
+            return {}
+        data = getattr(plugin, "data", None)
+        if isinstance(data, dict):
+            return data
+        return {}
     except Exception:
         return {}
 
@@ -319,11 +330,14 @@ def main():
     logger.info("Connected to DSF")
 
     # Detect firmware version on startup
+    # The DSF ObjectModel uses attribute access with snake_case names:
+    #   model.boards -> list of Board objects
+    #   board.firmware_version -> str
     try:
         model = cmd.get_object_model()
-        boards = model.get("boards", [])
+        boards = getattr(model, "boards", None) or []
         if boards:
-            fw = boards[0].get("firmwareVersion", "")
+            fw = getattr(boards[0], "firmware_version", "") or ""
             if fw:
                 set_plugin_data(cmd, "detectedFirmwareVersion", fw)
                 logger.info("Detected firmware version: %s", fw)

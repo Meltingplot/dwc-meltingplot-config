@@ -151,4 +151,49 @@ describe('BackupHistory', () => {
       global.fetch.mockRestore()
     })
   })
+
+  describe('createBackup', () => {
+    it('has creatingBackup data property', () => {
+      const wrapper = mountComponent({ backups: [] })
+      expect(wrapper.vm.creatingBackup).toBe(false)
+    })
+
+    it('calls manualBackup API and emits refresh on success', async () => {
+      const wrapper = mountComponent({ backups: [] })
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ backup: { hash: 'abc123', message: 'Manual backup' } })
+        })
+      )
+
+      await wrapper.vm.createBackup()
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/machine/MeltingplotConfig/manualBackup',
+        { method: 'POST' }
+      )
+      expect(wrapper.emitted('refresh')).toBeTruthy()
+      expect(wrapper.emitted('notify')).toBeTruthy()
+      expect(wrapper.emitted('notify')[0][0].color).toBe('success')
+      expect(wrapper.vm.creatingBackup).toBe(false)
+
+      global.fetch.mockRestore()
+    })
+
+    it('emits error notify on failure', async () => {
+      const wrapper = mountComponent({ backups: [] })
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({ ok: false, statusText: 'Internal Server Error' })
+      )
+
+      await wrapper.vm.createBackup()
+      expect(wrapper.emitted('notify')).toBeTruthy()
+      expect(wrapper.emitted('notify')[0][0].color).toBe('error')
+      expect(wrapper.vm.creatingBackup).toBe(false)
+
+      global.fetch.mockRestore()
+    })
+  })
 })

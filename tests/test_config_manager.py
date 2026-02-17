@@ -3,6 +3,7 @@
 import pytest
 
 from config_manager import (
+    BACKUP_EXCLUDED_PREFIXES,
     ConfigManager,
     _apply_single_hunk,
     _hunk_summary,
@@ -301,3 +302,23 @@ class TestDiffApplyRoundTrip:
         # First change applied, second not
         assert "CHANGED_A\n" in result
         assert "CHANGED_B\n" not in result
+
+
+# --- Backup exclusion ---
+
+
+class TestBackupExcludedPrefixes:
+    def test_gcodes_excluded(self):
+        assert "gcodes/" in BACKUP_EXCLUDED_PREFIXES
+
+    def test_gcodes_path_matches(self):
+        path = "gcodes/test_print.gcode"
+        assert path.startswith(BACKUP_EXCLUDED_PREFIXES)
+
+    def test_sys_path_not_excluded(self):
+        path = "sys/config.g"
+        assert not path.startswith(BACKUP_EXCLUDED_PREFIXES)
+
+    def test_macros_path_not_excluded(self):
+        path = "macros/print_start.g"
+        assert not path.startswith(BACKUP_EXCLUDED_PREFIXES)

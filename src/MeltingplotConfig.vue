@@ -55,6 +55,7 @@
                 @restore="restoreBackup"
                 @download="downloadBackup"
                 @refresh="loadBackups"
+                @notify="onBackupNotify"
               />
             </v-tab-item>
 
@@ -370,6 +371,9 @@ export default {
     },
     downloadBackup(commitHash) {
       window.open(`${API_BASE}/backupDownload?hash=${encodeURIComponent(commitHash)}`, '_blank')
+    },
+    onBackupNotify({ text, color }) {
+      this.notify(text, color)
     },
     async saveSettings() {
       this.savingSettings = true

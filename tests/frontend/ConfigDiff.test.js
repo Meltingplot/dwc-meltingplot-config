@@ -189,4 +189,118 @@ describe('ConfigDiff', () => {
       }
     })
   })
+
+  describe('loadFileDetail', () => {
+    afterEach(() => {
+      delete global.fetch
+    })
+
+    it('fetches detail for modified file without lines', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'modified', hunks: [{ index: 0, header: '@@ -1 +1 @@' }] }
+      global.fetch = jest.fn(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          hunks: [{ index: 0, header: '@@ -1 +1 @@', lines: [' line1', '-old', '+new'], summary: 'Line 1' }]
+        })
+      }))
+      await wrapper.vm.loadFileDetail(file)
+      expect(file.hunks).toHaveLength(1)
+      expect(file.hunks[0].lines).toBeDefined()
+      expect(file.hunks[0].selected).toBe(true)
+      expect(file.loadingDetail).toBe(false)
+    })
+
+    it('skips fetch for non-modified files', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'unchanged', hunks: [] }
+      global.fetch = jest.fn()
+      await wrapper.vm.loadFileDetail(file)
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    it('skips fetch when detail is already loaded', async () => {
+      const wrapper = mountComponent()
+      const file = {
+        file: 'sys/config.g',
+        status: 'modified',
+        hunks: [{ index: 0, header: '@@ -1 +1 @@', lines: [' existing'], selected: true }]
+      }
+      global.fetch = jest.fn()
+      await wrapper.vm.loadFileDetail(file)
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    it('defaults hunks to empty array on HTTP error', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'modified', hunks: [] }
+      global.fetch = jest.fn(() => Promise.resolve({
+        ok: false,
+        status: 500,
+        statusText: 'Server Error'
+      }))
+      await wrapper.vm.loadFileDetail(file)
+      expect(file.hunks).toEqual([])
+      expect(file.loadingDetail).toBe(false)
+    })
+
+    it('defaults hunks to empty array on network failure', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'modified', hunks: [] }
+      global.fetch = jest.fn(() => Promise.reject(new TypeError('Failed to fetch')))
+      await wrapper.vm.loadFileDetail(file)
+      expect(file.hunks).toEqual([])
+      expect(file.loadingDetail).toBe(false)
+    })
+
+    it('handles response missing hunks field', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'modified', hunks: [] }
+      global.fetch = jest.fn(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({})
+      }))
+      await wrapper.vm.loadFileDetail(file)
+      expect(file.hunks).toEqual([])
+      expect(file.loadingDetail).toBe(false)
+    })
+
+    it('handles null hunks in response', async () => {
+      const wrapper = mountComponent()
+      const file = { file: 'sys/config.g', status: 'modified', hunks: [] }
+      global.fetch = jest.fn(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ hunks: null })
+      }))
+      await wrapper.vm.loadFileDetail(file)
+      expect(file.hunks).toEqual([])
+      expect(file.loadingDetail).toBe(false)
+    })
+  })
+
+  describe('hunk selection edge cases', () => {
+    it('selectAllHunks does nothing when hunks is undefined', () => {
+      const wrapper = mountComponent()
+      const file = {}
+      wrapper.vm.selectAllHunks(file)
+      expect(file.hunks).toBeUndefined()
+    })
+
+    it('deselectAllHunks does nothing when hunks is undefined', () => {
+      const wrapper = mountComponent()
+      const file = {}
+      wrapper.vm.deselectAllHunks(file)
+      expect(file.hunks).toBeUndefined()
+    })
+
+    it('selectedHunkCount returns 0 when hunks is undefined', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.selectedHunkCount({})).toBe(0)
+    })
+
+    it('selectedHunkCount returns 0 for empty hunks array', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.selectedHunkCount({ hunks: [] })).toBe(0)
+    })
+  })
 })

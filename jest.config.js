@@ -9,5 +9,11 @@ module.exports = {
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1'
     },
-    setupFiles: ['./tests/frontend/setup.js']
+    setupFiles: ['./tests/frontend/setup.js'],
+    collectCoverageFrom: [
+        'src/**/*.{js,vue}',
+        '!src/**/index.js'
+    ],
+    coverageDirectory: 'coverage',
+    coverageReporters: ['text', 'text-summary']
 };

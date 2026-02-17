@@ -538,4 +538,94 @@ describe('MeltingplotConfig', () => {
             expect(wrapper.vm.snackbar.color).toBe('info');
         });
     });
+
+    describe('fetch network rejection (TypeError)', () => {
+        function mockFetchReject() {
+            global.fetch = jest.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+        }
+
+        it('apiGet rejects on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            mockFetchReject();
+            await expect(wrapper.vm.apiGet('/test')).rejects.toThrow('Failed to fetch');
+        });
+
+        it('apiPost rejects on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            mockFetchReject();
+            await expect(wrapper.vm.apiPost('/test')).rejects.toThrow('Failed to fetch');
+        });
+
+        it('loadStatus silently handles network failure', async () => {
+            mockFetchReject();
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 10));
+            // Should not throw — branches remain empty
+            expect(wrapper.vm.availableBranches).toEqual([]);
+            // No error notification (loadStatus silently catches)
+            expect(wrapper.vm.snackbar.show).toBe(false);
+        });
+
+        it('checkForUpdates shows error on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            mockFetchReject();
+            await wrapper.vm.checkForUpdates();
+            expect(wrapper.vm.syncing).toBe(false);
+            expect(wrapper.vm.snackbar.show).toBe(true);
+            expect(wrapper.vm.snackbar.color).toBe('error');
+            expect(wrapper.vm.snackbar.text).toContain('Failed to fetch');
+        });
+
+        it('loadDiff shows error and resets loading flag on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            mockFetchReject();
+            await wrapper.vm.loadDiff();
+            expect(wrapper.vm.loadingDiff).toBe(false);
+            expect(wrapper.vm.snackbar.show).toBe(true);
+            expect(wrapper.vm.snackbar.color).toBe('error');
+        });
+
+        it('loadBackups shows error and resets loading flag on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            mockFetchReject();
+            await wrapper.vm.loadBackups();
+            expect(wrapper.vm.loadingBackups).toBe(false);
+            expect(wrapper.vm.snackbar.show).toBe(true);
+            expect(wrapper.vm.snackbar.color).toBe('error');
+        });
+
+        it('loadBranches silently handles network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            mockFetchReject();
+            await wrapper.vm.loadBranches();
+            // loadBranches silently catches (non-critical)
+            expect(wrapper.vm.snackbar.show).toBe(false);
+        });
+
+        it('saveSettings shows error on network failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            mockFetchReject();
+            await wrapper.vm.saveSettings();
+            expect(wrapper.vm.savingSettings).toBe(false);
+            expect(wrapper.vm.snackbar.show).toBe(true);
+            expect(wrapper.vm.snackbar.color).toBe('error');
+        });
+    });
 });

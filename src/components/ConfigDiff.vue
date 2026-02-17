@@ -143,7 +143,10 @@ export default {
       return 'diff-context'
     },
     async loadFileDetail(file) {
-      if (file.hunks || file.status !== 'modified') return
+      if (file.status !== 'modified') return
+      // diff_all returns summary hunks (index + header only).
+      // Skip fetch only if full detail (lines) is already loaded.
+      if (file.hunks && file.hunks.length > 0 && file.hunks[0].lines) return
       this.$set(file, 'loadingDetail', true)
       try {
         const response = await fetch(`${API_BASE}/diff?file=${encodeURIComponent(file.file)}`)

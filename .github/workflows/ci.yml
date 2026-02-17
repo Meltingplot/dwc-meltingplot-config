@@ -95,14 +95,9 @@ jobs:
       - name: Verify build output
         run: ls DuetWebControl/dist/MeltingplotConfig-*.zip
 
-      - name: Extract plugin ZIP for artifact upload
-        run: |
-          mkdir -p artifact-content
-          unzip DuetWebControl/dist/MeltingplotConfig-*.zip -d artifact-content
-
       - name: Upload plugin ZIP
         uses: actions/upload-artifact@v4
         with:
           name: MeltingplotConfig-plugin
-          path: artifact-content/*
+          path: DuetWebControl/dist/MeltingplotConfig-*.zip
           retention-days: 30

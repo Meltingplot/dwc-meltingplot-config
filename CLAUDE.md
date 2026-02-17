@@ -162,7 +162,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 | Reference config source | Git repo — one repo per printer model |
 | Firmware versioning | One branch per firmware version |
 | Backend runtime | Python SBC daemon via DSF (venv with `sbcPythonDependencies`) |
-| Backup strategy | Local git repo at `/opt/dsf/plugins/MeltingplotConfig/backups/` |
+| Backup strategy | Worktree-based git repo — tracks sys/, macros/, filaments/ in-place |
 | Partial apply | Hunk-level selection — users pick individual change blocks |
 
 ## HTTP API

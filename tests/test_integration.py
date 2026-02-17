@@ -69,6 +69,9 @@ def printer_fs(tmp_path):
     macros_dir.mkdir()
     (macros_dir / "print_start.g").write_text("T0\nM116\n")
 
+    filaments_dir = root / "filaments"
+    filaments_dir.mkdir()
+
     return root
 
 
@@ -295,11 +298,13 @@ class TestManualBackup:
         assert "Before firmware update" in result["backup"]["message"]
 
     def test_manual_backup_without_reference_repo(self, integration_env):
-        """Manual backup without a cloned reference repo should return error."""
+        """Manual backup works without a cloned reference repo — backups
+        are independent, tracking the printer filesystem via the worktree."""
         env = integration_env
-        # Don't sync — no reference repo
+        # Don't sync — no reference repo, but backup still works
         result = env["manager"].create_manual_backup()
-        assert "error" in result
+        assert "error" not in result
+        assert result["backup"] is not None
 
     def test_manual_backup_appears_in_history(self, integration_env):
         """Manual backup should appear in backup history."""
@@ -324,50 +329,17 @@ class TestManualBackup:
 
 class TestGcodeExclusion:
     def test_gcodes_excluded_from_backup(self, integration_env):
-        """Gcode files should not appear in backups."""
+        """Gcode files should not appear in backups — only BACKUP_INCLUDED_DIRS
+        (sys/, macros/, filaments/) are staged via the worktree."""
         env = integration_env
         pfs = env["printer_fs"]
 
-        # Add gcodes directory to reference repo and printer
-        ref_dir = env["ref_dir"]
-        env["manager"].sync(env["repo_url"], "3.5")
-
-        # Create gcode files in the reference dir and printer filesystem
-        gcodes_ref = os.path.join(ref_dir, "gcodes")
-        os.makedirs(gcodes_ref, exist_ok=True)
-        with open(os.path.join(gcodes_ref, "test.gcode"), "w") as f:
-            f.write("G28\nG1 X100\n")
-        # Configure git user for commits in the cloned reference dir
-        subprocess.run(
-            ["git", "config", "user.email", "t@t.com"],
-            cwd=ref_dir, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "T"],
-            cwd=ref_dir, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "commit.gpgsign", "false"],
-            cwd=ref_dir, check=True, capture_output=True,
-        )
-        # Also track it in git
-        subprocess.run(
-            ["git", "add", "gcodes/test.gcode"],
-            cwd=ref_dir, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", "add gcode"],
-            cwd=ref_dir, check=True, capture_output=True,
-        )
-
+        # Create gcodes directory on the printer filesystem
         gcodes_printer = pfs / "gcodes"
         gcodes_printer.mkdir(exist_ok=True)
         (gcodes_printer / "test.gcode").write_text("G28\nG1 X100\n")
 
-        # Update resolved dirs to include gcodes
-        env["manager"]._resolved_dirs["0:/gcodes/"] = str(gcodes_printer) + "/"
-
-        # Create a manual backup
+        # Create a manual backup (no sync needed — backups are independent)
         result = env["manager"].create_manual_backup("test gcode exclusion")
         assert "error" not in result
         backup_hash = result["backup"]["hash"]

@@ -141,6 +141,9 @@ def printer_fs(tmp_path):
     macros_dir.mkdir()
     (macros_dir / "print_start.g").write_text("T0\nM116\n")
 
+    filaments_dir = root / "filaments"
+    filaments_dir.mkdir()
+
     return root
 
 
@@ -153,6 +156,7 @@ def e2e_env(tmp_path, reference_repo, printer_fs):
     resolved = {
         "0:/sys/": str(printer_fs / "sys") + "/",
         "0:/macros/": str(printer_fs / "macros") + "/",
+        "0:/filaments/": str(printer_fs / "filaments") + "/",
     }
 
     # Mock cmd with plugin data storage that handlers can read/write
@@ -529,11 +533,15 @@ class TestE2EManualBackupFlow:
         body = _body(resp)
         assert "Before firmware update" in body["backup"]["message"]
 
-    def test_manual_backup_without_sync_returns_error(self, e2e_env):
+    def test_manual_backup_without_sync_succeeds(self, e2e_env):
+        """Manual backup works without sync — backups track the printer
+        filesystem directly via the worktree, independent of the reference repo."""
         d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
-        # Don't sync first
+        # Don't sync first — backup should still work
         resp = d.handle_manual_backup(cmd, mgr, "", {})
-        assert resp["status"] == 400
+        assert resp["status"] == 200
+        body = _body(resp)
+        assert body["backup"] is not None
 
     def test_manual_backup_appears_in_backups_list(self, e2e_env):
         d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]

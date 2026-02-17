@@ -564,53 +564,37 @@ class TestApplyHunks:
 
 
 class TestCreateBackup:
-    def test_create_backup_skips_if_no_repo(self, manager):
-        with patch("config_manager.REFERENCE_DIR", "/nonexistent"):
-            # Should not raise
+    def test_create_backup_skips_if_no_worktree(self, manager):
+        """_create_backup is a no-op when worktree is not configured."""
+        manager._worktree = None
+        manager._backup_paths = []
+        with patch("config_manager.backup_commit") as mock_commit:
             manager._create_backup("test")
+        mock_commit.assert_not_called()
 
-    def test_create_backup_copies_printer_files(self, manager, printer_fs, tmp_path):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        sys_dir = tmp_path / "sys"
-        sys_dir.mkdir()
-        (sys_dir / "config.g").write_text("ref content", encoding="utf-8")
-
+    def test_create_backup_commits_via_worktree(self, manager, printer_fs):
+        """_create_backup stages only the existing backup paths and commits."""
+        # Create the directories that _create_backup expects
+        (printer_fs / "sys").mkdir(exist_ok=True)
         _write_printer_file(printer_fs, "sys/config.g", "printer content")
+        (printer_fs / "macros").mkdir(exist_ok=True)
 
-        backup_dir = tmp_path / "backups"
-
-        with (
-            patch("config_manager.REFERENCE_DIR", str(tmp_path)),
-            patch("config_manager.BACKUP_DIR", str(backup_dir)),
-            patch("config_manager.list_files", return_value=["sys/config.g"]),
-            patch("config_manager.backup_commit") as mock_commit,
-        ):
+        with patch("config_manager.backup_commit") as mock_commit:
             manager._create_backup("test backup")
 
-        # File should be written to backup dir
-        backup_file = backup_dir / "sys" / "config.g"
-        assert backup_file.exists()
-        assert backup_file.read_text() == "printer content"
         mock_commit.assert_called_once()
+        call_args = mock_commit.call_args
+        # Should pass paths= with existing directories
+        assert call_args[1].get("paths") is not None or len(call_args[0]) >= 3
+        # Verify the message contains our label
+        assert "test backup" in call_args[0][1]
 
-    def test_create_backup_skips_unreadable_files(self, manager, tmp_path):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-
-        # No printer file -> skipped
-        backup_dir = tmp_path / "backups"
-
-        with (
-            patch("config_manager.REFERENCE_DIR", str(tmp_path)),
-            patch("config_manager.BACKUP_DIR", str(backup_dir)),
-            patch("config_manager.list_files", return_value=["sys/config.g"]),
-            patch("config_manager.backup_commit"),
-        ):
+    def test_create_backup_skips_nonexistent_dirs(self, manager, printer_fs):
+        """_create_backup skips directories that don't exist on the filesystem."""
+        # Don't create any directories — all backup_paths are nonexistent
+        with patch("config_manager.backup_commit") as mock_commit:
             manager._create_backup("test")
-
-        # No file should be written since printer content was None
-        assert not (backup_dir / "sys" / "config.g").exists()
+        mock_commit.assert_not_called()
 
 
 class TestBackupDelegation:
@@ -634,23 +618,25 @@ class TestBackupDelegation:
 
 
 class TestRestoreBackup:
-    def test_restore_backup_writes_files(self, manager, printer_fs):
+    def test_restore_backup_calls_checkout(self, manager):
+        """restore_backup uses backup_checkout to restore files into the worktree."""
         with (
             patch.object(manager, "_create_backup"),
             patch("config_manager.backup_files_at", return_value=["sys/config.g", "sys/homex.g"]),
-            patch("config_manager.backup_file_content", side_effect=["G28\n", "G28 X\n"]),
+            patch("config_manager.backup_checkout") as mock_checkout,
         ):
             result = manager.restore_backup("abc123")
 
+        mock_checkout.assert_called_once_with(BACKUP_DIR, "abc123")
         assert "sys/config.g" in result["restored"]
         assert "sys/homex.g" in result["restored"]
-        assert (printer_fs / "sys" / "config.g").read_text() == "G28\n"
-        assert (printer_fs / "sys" / "homex.g").read_text() == "G28 X\n"
 
     def test_restore_backup_creates_safety_backups(self, manager):
+        """Pre-restore and post-restore backups are created."""
         with (
             patch.object(manager, "_create_backup") as mock_backup,
             patch("config_manager.backup_files_at", return_value=[]),
+            patch("config_manager.backup_checkout"),
         ):
             manager.restore_backup("abc123")
 
@@ -658,16 +644,16 @@ class TestRestoreBackup:
         assert mock_backup.call_count == 2
         assert "Pre-restore" in mock_backup.call_args_list[0][0][0]
 
-    def test_restore_backup_skips_unmanaged_paths(self, manager, printer_fs):
+    def test_restore_backup_returns_file_list(self, manager):
+        """restore_backup returns the file list from the commit."""
         with (
             patch.object(manager, "_create_backup"),
-            patch("config_manager.backup_files_at", return_value=["README.md"]),
-            patch("config_manager.backup_file_content", return_value="content"),
+            patch("config_manager.backup_files_at", return_value=["sys/config.g"]),
+            patch("config_manager.backup_checkout"),
         ):
             result = manager.restore_backup("abc123")
 
-        assert result["restored"] == []
-        assert not (printer_fs / "sys").exists()
+        assert result["restored"] == ["sys/config.g"]
 
 
 # --- Sync cascading failure tests ---
@@ -759,25 +745,15 @@ class TestApplyAllPartialWriteFailure:
         assert result["applied"] == []
 
 
-class TestRestoreBackupPartialWriteFailure:
-    """Tests for restore_backup when _write_printer_file fails mid-loop."""
+class TestRestoreBackupCheckoutFailure:
+    """Tests for restore_backup when backup_checkout fails."""
 
-    def test_restore_write_raises_propagates(self, manager, printer_fs):
-        call_count = 0
-        original_write = manager._write_printer_file
-
-        def write_fail_on_second(printer_path, content):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
-                raise IOError("write failed")
-            return original_write(printer_path, content)
-
+    def test_restore_checkout_error_propagates(self, manager):
+        """If backup_checkout raises, the error propagates."""
         with (
             patch.object(manager, "_create_backup"),
-            patch("config_manager.backup_files_at", return_value=["sys/config.g", "sys/homex.g"]),
-            patch("config_manager.backup_file_content", return_value="restored content"),
-            patch.object(manager, "_write_printer_file", side_effect=write_fail_on_second),
+            patch("config_manager.backup_files_at", return_value=["sys/config.g"]),
+            patch("config_manager.backup_checkout", side_effect=RuntimeError("checkout failed")),
         ):
-            with pytest.raises(IOError, match="write failed"):
+            with pytest.raises(RuntimeError, match="checkout failed"):
                 manager.restore_backup("abc123")

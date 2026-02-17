@@ -3,7 +3,7 @@
 import pytest
 
 from config_manager import (
-    BACKUP_EXCLUDED_PREFIXES,
+    BACKUP_INCLUDED_DIRS,
     ConfigManager,
     _apply_single_hunk,
     _hunk_summary,
@@ -307,21 +307,21 @@ class TestDiffApplyRoundTrip:
 # --- Backup exclusion ---
 
 
-class TestBackupExcludedPrefixes:
-    def test_gcodes_excluded(self):
-        assert "gcodes/" in BACKUP_EXCLUDED_PREFIXES
+class TestBackupIncludedDirs:
+    def test_sys_included(self):
+        assert "sys/" in BACKUP_INCLUDED_DIRS
 
-    def test_gcodes_path_matches(self):
-        path = "gcodes/test_print.gcode"
-        assert path.startswith(BACKUP_EXCLUDED_PREFIXES)
+    def test_macros_included(self):
+        assert "macros/" in BACKUP_INCLUDED_DIRS
 
-    def test_sys_path_not_excluded(self):
-        path = "sys/config.g"
-        assert not path.startswith(BACKUP_EXCLUDED_PREFIXES)
+    def test_filaments_included(self):
+        assert "filaments/" in BACKUP_INCLUDED_DIRS
 
-    def test_macros_path_not_excluded(self):
-        path = "macros/print_start.g"
-        assert not path.startswith(BACKUP_EXCLUDED_PREFIXES)
+    def test_gcodes_not_included(self):
+        assert "gcodes/" not in BACKUP_INCLUDED_DIRS
+
+    def test_firmware_not_included(self):
+        assert "firmware/" not in BACKUP_INCLUDED_DIRS
 
 
 # --- Multi-hunk offset accumulation tests ---

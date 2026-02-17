@@ -67,11 +67,12 @@ class TestGetPluginData:
     def test_returns_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({
-            "plugins": {"MeltingplotConfig": {"data": {
-                "status": "up_to_date", "activeBranch": "3.5"
-            }}}
+        plugin = SimpleNamespace(data={
+            "status": "up_to_date", "activeBranch": "3.5"
         })
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": plugin}
+        )
         data = daemon.get_plugin_data(cmd)
         assert data["status"] == "up_to_date"
         assert data["activeBranch"] == "3.5"
@@ -79,28 +80,28 @@ class TestGetPluginData:
     def test_returns_empty_dict_when_no_plugins(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({"plugins": {}})
+        cmd.get_object_model.return_value = SimpleNamespace(plugins={})
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
     def test_returns_empty_dict_when_plugin_missing(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({"plugins": {}})
+        cmd.get_object_model.return_value = SimpleNamespace(plugins={})
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
     def test_returns_empty_dict_when_no_plugins_key(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({})
+        cmd.get_object_model.return_value = SimpleNamespace()
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
     def test_returns_empty_dict_on_exception(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.side_effect = Exception("connection lost")
+        cmd.get_object_model.side_effect = Exception("connection lost")
         data = daemon.get_plugin_data(cmd)
         assert data == {}
 
@@ -127,13 +128,13 @@ class TestHandleSync:
     def test_sync_success_updates_plugin_data(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({
-            "plugins": {"MeltingplotConfig": {"data": {
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
                 "referenceRepoUrl": "https://example.com/repo.git",
                 "detectedFirmwareVersion": "3.5.1",
                 "firmwareBranchOverride": "",
-            }}}
-        })
+            })}
+        )
         manager = MagicMock()
         manager.sync.return_value = {
             "activeBranch": "3.5",
@@ -160,11 +161,11 @@ class TestHandleSync:
     def test_sync_error_returns_400(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({
-            "plugins": {"MeltingplotConfig": {"data": {
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
                 "referenceRepoUrl": "", "detectedFirmwareVersion": "", "firmwareBranchOverride": ""
-            }}}
-        })
+            })}
+        )
         manager = MagicMock()
         manager.sync.return_value = {"error": "No reference repository URL configured"}
 
@@ -176,13 +177,13 @@ class TestHandleSync:
     def test_sync_passes_branch_override(self):
         daemon = _import_daemon()
         cmd = MagicMock()
-        cmd.get_serialized_object_model.return_value = json.dumps({
-            "plugins": {"MeltingplotConfig": {"data": {
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
                 "referenceRepoUrl": "https://example.com/repo.git",
                 "detectedFirmwareVersion": "3.5.1",
                 "firmwareBranchOverride": "custom-branch",
-            }}}
-        })
+            })}
+        )
         manager = MagicMock()
         manager.sync.return_value = {
             "activeBranch": "custom-branch",

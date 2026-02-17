@@ -17,6 +17,24 @@ from dsf.connections import CommandConnection
 from dsf.http import HttpEndpointConnection, HttpResponseType
 from dsf.object_model import HttpEndpointType
 
+# Monkey-patch dsf-python: PluginManifest._data is a plain dict which
+# _update_from_json silently skips.  Replace it with ModelDictionary(False)
+# so deserialization populates plugin.data correctly.
+# See: https://github.com/Duet3D/dsf-python/issues/XXX
+try:
+    from dsf.object_model.plugins.plugin_manifest import PluginManifest as _PM
+    from dsf.object_model.model_dictionary import ModelDictionary as _MD
+
+    _original_pm_init = _PM.__init__
+
+    def _patched_pm_init(self):
+        _original_pm_init(self)
+        self._data = _MD(False)
+
+    _PM.__init__ = _patched_pm_init
+except ImportError:
+    pass  # dsf not installed (e.g. test environment)
+
 from config_manager import ConfigManager
 
 logging.basicConfig(
@@ -36,18 +54,18 @@ API_NAMESPACE = "MeltingplotConfig"
 def get_plugin_data(cmd):
     """Read plugin data from the DSF object model.
 
-    Uses get_serialized_object_model() to get raw JSON and parses it
-    directly.  This works around a dsf-python bug where dict-typed
-    properties (like Plugin.data) are never populated during
-    deserialization — _update_from_json handles list and ModelObject
-    but silently skips dict attributes.
+    Relies on the monkey-patch above that changes PluginManifest._data
+    from a plain dict to ModelDictionary(False), so _update_from_json
+    populates it correctly.
     """
     try:
-        raw = cmd.get_serialized_object_model()
-        model = json.loads(raw)
-        plugin = model.get("plugins", {}).get(PLUGIN_ID, {})
-        data = plugin.get("data", {})
-        return data if isinstance(data, dict) else {}
+        model = cmd.get_object_model()
+        plugins = getattr(model, "plugins", None) or {}
+        plugin = plugins.get(PLUGIN_ID) if isinstance(plugins, dict) else None
+        if plugin is None:
+            return {}
+        data = getattr(plugin, "data", None)
+        return dict(data) if isinstance(data, dict) else {}
     except Exception:
         return {}
 

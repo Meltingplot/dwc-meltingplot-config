@@ -3,6 +3,10 @@
     <v-toolbar flat dense class="mb-4">
       <v-toolbar-title class="subtitle-1">Backup History</v-toolbar-title>
       <v-spacer />
+      <v-btn small color="primary" class="mr-2" :loading="creatingBackup" @click="createBackup">
+        <v-icon left small>mdi-content-save</v-icon>
+        Create Backup
+      </v-btn>
       <v-btn small text @click="$emit('refresh')">
         <v-icon left small>mdi-refresh</v-icon>
         Refresh
@@ -87,7 +91,25 @@ export default {
     backups: { type: Array, default: () => [] },
     loading: { type: Boolean, default: false }
   },
+  data() {
+    return {
+      creatingBackup: false
+    }
+  },
   methods: {
+    async createBackup() {
+      this.creatingBackup = true
+      try {
+        const response = await fetch(`${API_BASE}/manualBackup`, { method: 'POST' })
+        if (!response.ok) throw new Error(response.statusText)
+        this.$emit('refresh')
+        this.$emit('notify', { text: 'Backup created successfully', color: 'success' })
+      } catch (err) {
+        this.$emit('notify', { text: 'Failed to create backup: ' + err.message, color: 'error' })
+      } finally {
+        this.creatingBackup = false
+      }
+    },
     async toggleExpand(backup) {
       if (backup.expanded) {
         this.$set(backup, 'expanded', false)

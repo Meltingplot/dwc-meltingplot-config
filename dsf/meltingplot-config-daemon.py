@@ -240,6 +240,24 @@ def handle_apply_hunks(_cmd, manager, body, queries):
     return json_response(result)
 
 
+def handle_manual_backup(_cmd, manager, body, _queries):
+    """POST /machine/MeltingplotConfig/manualBackup
+
+    Body (optional): {"message": "My backup note"}
+    """
+    message = ""
+    if body:
+        try:
+            data = json.loads(body)
+            message = data.get("message", "")
+        except json.JSONDecodeError:
+            return error_response("Invalid JSON body")
+    result = manager.create_manual_backup(message)
+    if "error" in result:
+        return error_response(result["error"])
+    return json_response(result)
+
+
 def handle_backup(_cmd, manager, _body, queries):
     """GET /machine/MeltingplotConfig/backup?hash=<hash>"""
     commit_hash = queries.get("hash", "")
@@ -308,6 +326,7 @@ ENDPOINTS = {
     ("GET", "diff"): handle_diff,
     ("GET", "reference"): handle_reference,
     ("GET", "backups"): handle_backups,
+    ("POST", "manualBackup"): handle_manual_backup,
     ("POST", "apply"): handle_apply,
     ("POST", "applyHunks"): handle_apply_hunks,
     ("GET", "backup"): handle_backup,

@@ -256,6 +256,52 @@ class TestHandlers:
         resp = daemon.handle_restore(cmd, manager, "", {})
         assert resp["status"] == 400
 
+    def test_manual_backup(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.create_manual_backup.return_value = {
+            "backup": {"hash": "abc123", "message": "Manual backup"}
+        }
+
+        resp = daemon.handle_manual_backup(cmd, manager, "", {})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert "backup" in body
+        manager.create_manual_backup.assert_called_once_with("")
+
+    def test_manual_backup_with_message(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.create_manual_backup.return_value = {
+            "backup": {"hash": "abc123", "message": "My note"}
+        }
+
+        body = json.dumps({"message": "My note"})
+        resp = daemon.handle_manual_backup(cmd, manager, body, {})
+        assert resp["status"] == 200
+        manager.create_manual_backup.assert_called_once_with("My note")
+
+    def test_manual_backup_invalid_json(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        resp = daemon.handle_manual_backup(cmd, manager, "not json", {})
+        assert resp["status"] == 400
+
+    def test_manual_backup_error(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.create_manual_backup.return_value = {
+            "error": "Reference repository not cloned"
+        }
+
+        resp = daemon.handle_manual_backup(cmd, manager, "", {})
+        assert resp["status"] == 400
+
 
 class TestEndpointRegistry:
     def test_endpoints_registered(self):
@@ -268,6 +314,7 @@ class TestEndpointRegistry:
         assert ("GET", "branches") in endpoints
         assert ("GET", "reference") in endpoints
         assert ("GET", "backups") in endpoints
+        assert ("POST", "manualBackup") in endpoints
         assert ("POST", "apply") in endpoints
         assert ("POST", "applyHunks") in endpoints
         assert ("GET", "backup") in endpoints

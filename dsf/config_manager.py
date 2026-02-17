@@ -30,6 +30,9 @@ PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
 REFERENCE_DIR = os.path.join(PLUGIN_DIR, "reference")
 BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
 
+# Directories excluded from backups (gcode files are large and user-specific).
+BACKUP_EXCLUDED_PREFIXES = ("gcodes/",)
+
 # Default directory mapping (fallback when DSF object model is unavailable).
 # In production, the daemon reads model.directories and builds this dynamically.
 DEFAULT_DIRECTORY_MAP = {
@@ -401,11 +404,17 @@ class ConfigManager:
     # --- Backups ---
 
     def _create_backup(self, message):
-        """Copy current printer config files into the backup repo and commit."""
+        """Copy current printer config files into the backup repo and commit.
+
+        Gcode files (under gcodes/) are excluded from backups because they are
+        large, user-specific, and not part of the printer configuration.
+        """
         if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
             return
         ref_files = list_files(REFERENCE_DIR)
         for ref_path in ref_files:
+            if ref_path.startswith(BACKUP_EXCLUDED_PREFIXES):
+                continue
             printer_path = self._ref_to_printer_path(ref_path)
             if printer_path is None:
                 continue
@@ -418,6 +427,23 @@ class ConfigManager:
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         backup_commit(BACKUP_DIR, f"{message} \u2014 {now}")
+
+    def create_manual_backup(self, message=""):
+        """Create a manual backup of the current printer config.
+
+        Returns a dict with the backup hash and message, or an error.
+        """
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return {"error": "Reference repository not cloned"}
+
+        label = message.strip() if message else "Manual backup"
+        self._create_backup(label)
+
+        # Return the latest backup entry
+        backups = self.get_backups(max_count=1)
+        if backups:
+            return {"backup": backups[0]}
+        return {"backup": None}
 
     def get_backups(self, max_count=50):
         """Get backup history."""

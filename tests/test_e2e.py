@@ -504,3 +504,56 @@ class TestE2EReferenceFiles:
         assert "sys/config.g" in body["files"]
         assert "sys/homex.g" in body["files"]
         assert "macros/print_start.g" in body["files"]
+
+
+class TestE2EManualBackupFlow:
+    """Manual backup through handlers."""
+
+    def test_manual_backup_creates_entry(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        resp = d.handle_manual_backup(cmd, mgr, "", {})
+        assert resp["status"] == 200
+        body = _body(resp)
+        assert body["backup"] is not None
+        assert "Manual backup" in body["backup"]["message"]
+
+    def test_manual_backup_with_custom_message(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        msg = json.dumps({"message": "Before firmware update"})
+        resp = d.handle_manual_backup(cmd, mgr, msg, {})
+        assert resp["status"] == 200
+        body = _body(resp)
+        assert "Before firmware update" in body["backup"]["message"]
+
+    def test_manual_backup_without_sync_returns_error(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        # Don't sync first
+        resp = d.handle_manual_backup(cmd, mgr, "", {})
+        assert resp["status"] == 400
+
+    def test_manual_backup_appears_in_backups_list(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+        d.handle_manual_backup(cmd, mgr, "", {})
+
+        resp = d.handle_backups(cmd, mgr, "", {})
+        body = _body(resp)
+        messages = [b["message"] for b in body["backups"]]
+        assert any("Manual backup" in m for m in messages)
+
+    def test_manual_backup_is_downloadable(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        resp = d.handle_manual_backup(cmd, mgr, "", {})
+        backup_hash = _body(resp)["backup"]["hash"]
+
+        dl_resp = d.handle_backup_download(cmd, mgr, "", {"hash": backup_hash})
+        assert dl_resp["status"] == 200
+        assert dl_resp["contentType"] == "application/zip"
+        assert dl_resp["responseType"] == "file"
+        assert os.path.isfile(dl_resp["body"])

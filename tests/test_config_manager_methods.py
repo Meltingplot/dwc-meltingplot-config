@@ -668,3 +668,116 @@ class TestRestoreBackup:
 
         assert result["restored"] == []
         assert not (printer_fs / "sys").exists()
+
+
+# --- Sync cascading failure tests ---
+
+
+class TestSyncCascadingFailures:
+    """Tests for sync() when git operations fail mid-sequence."""
+
+    def test_fetch_raises_after_successful_clone(self, manager):
+        with (
+            patch("config_manager.clone") as mock_clone,
+            patch("config_manager.fetch", side_effect=RuntimeError("network error")),
+        ):
+            with pytest.raises(RuntimeError, match="network error"):
+                manager.sync("https://example.com/repo.git", "3.5")
+        mock_clone.assert_called_once()
+
+    def test_checkout_raises_after_successful_fetch(self, manager):
+        with (
+            patch("config_manager.clone"),
+            patch("config_manager.fetch"),
+            patch("config_manager.find_closest_branch", return_value=("3.5", True)),
+            patch("config_manager.checkout", side_effect=RuntimeError("checkout failed")),
+        ):
+            with pytest.raises(RuntimeError, match="checkout failed"):
+                manager.sync("https://example.com/repo.git", "3.5")
+
+    def test_pull_raises_after_successful_checkout(self, manager):
+        with (
+            patch("config_manager.clone"),
+            patch("config_manager.fetch"),
+            patch("config_manager.find_closest_branch", return_value=("3.5", True)),
+            patch("config_manager.checkout"),
+            patch("config_manager.pull", side_effect=RuntimeError("pull failed")),
+        ):
+            with pytest.raises(RuntimeError, match="pull failed"):
+                manager.sync("https://example.com/repo.git", "3.5")
+
+
+# --- Partial write failure tests ---
+
+
+class TestApplyAllPartialWriteFailure:
+    """Tests for apply_all when _write_printer_file raises mid-loop."""
+
+    def test_apply_all_write_raises_propagates(self, manager, printer_fs, tmp_path):
+        """If _write_printer_file raises on one file, the exception propagates."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        sys_dir = tmp_path / "sys"
+        sys_dir.mkdir()
+        (sys_dir / "config.g").write_text("content1", encoding="utf-8")
+        (sys_dir / "homex.g").write_text("content2", encoding="utf-8")
+
+        call_count = 0
+        original_write = manager._write_printer_file
+
+        def write_fail_on_second(printer_path, content):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise IOError("disk full")
+            return original_write(printer_path, content)
+
+        with (
+            patch("config_manager.REFERENCE_DIR", str(tmp_path)),
+            patch("config_manager.list_files", return_value=["sys/config.g", "sys/homex.g"]),
+            patch.object(manager, "_create_backup"),
+            patch.object(manager, "get_active_branch", return_value="3.5"),
+            patch.object(manager, "_write_printer_file", side_effect=write_fail_on_second),
+        ):
+            with pytest.raises(IOError, match="disk full"):
+                manager.apply_all()
+
+    def test_apply_all_skips_files_with_none_content(self, manager, printer_fs, tmp_path):
+        """Files where _read_reference_file returns None are skipped, not applied."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
+        with (
+            patch("config_manager.REFERENCE_DIR", str(tmp_path)),
+            patch("config_manager.list_files", return_value=["sys/config.g"]),
+            patch.object(manager, "_read_reference_file", return_value=None),
+            patch.object(manager, "_create_backup"),
+            patch.object(manager, "get_active_branch", return_value="main"),
+        ):
+            result = manager.apply_all()
+
+        assert result["applied"] == []
+
+
+class TestRestoreBackupPartialWriteFailure:
+    """Tests for restore_backup when _write_printer_file fails mid-loop."""
+
+    def test_restore_write_raises_propagates(self, manager, printer_fs):
+        call_count = 0
+        original_write = manager._write_printer_file
+
+        def write_fail_on_second(printer_path, content):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise IOError("write failed")
+            return original_write(printer_path, content)
+
+        with (
+            patch.object(manager, "_create_backup"),
+            patch("config_manager.backup_files_at", return_value=["sys/config.g", "sys/homex.g"]),
+            patch("config_manager.backup_file_content", return_value="restored content"),
+            patch.object(manager, "_write_printer_file", side_effect=write_fail_on_second),
+        ):
+            with pytest.raises(IOError, match="write failed"):
+                manager.restore_backup("abc123")

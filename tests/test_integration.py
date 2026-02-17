@@ -379,3 +379,144 @@ class TestGcodeExclusion:
 
         # But config files should still be there
         assert "sys/config.g" in files
+
+
+# --- Special character file path tests ---
+
+
+@pytest.fixture
+def special_char_repo(tmp_path):
+    """Create a reference repo with files containing special characters in names."""
+    bare = tmp_path / "special_bare.git"
+    bare.mkdir()
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "receive.denyCurrentBranch", "ignore"],
+        cwd=str(bare), check=True, capture_output=True,
+    )
+
+    clone_dir = tmp_path / "special_setup"
+    subprocess.run(["git", "clone", str(bare), str(clone_dir)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    sys_dir = clone_dir / "sys"
+    sys_dir.mkdir()
+    # File with space in name
+    (sys_dir / "my config.g").write_text("G28\nM584 X0\n")
+    # File with hyphen and underscore
+    (sys_dir / "home-x_axis.g").write_text("G91\nG1 H1 X-300\n")
+
+    subprocess.run(["git", "add", "-A"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "files with special chars"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    return str(bare)
+
+
+@pytest.fixture
+def special_char_env(tmp_path, special_char_repo):
+    """Set up integration env with special character file names."""
+    printer_fs = tmp_path / "printer_sd"
+    printer_fs.mkdir()
+    sys_dir = printer_fs / "sys"
+    sys_dir.mkdir()
+
+    # Create printer files with different content (to get diffs)
+    (sys_dir / "my config.g").write_text("G28\nM584 X1\n")
+    (sys_dir / "home-x_axis.g").write_text("G91\nG1 H1 X-200\n")
+
+    ref_dir = str(tmp_path / "reference")
+    backup_dir = str(tmp_path / "backups")
+
+    resolved = {
+        "0:/sys/": str(printer_fs / "sys") + "/",
+    }
+
+    with (
+        patch("config_manager.REFERENCE_DIR", ref_dir),
+        patch("config_manager.BACKUP_DIR", backup_dir),
+        patch("config_manager.PLUGIN_DIR", str(tmp_path)),
+    ):
+        manager = ConfigManager(
+            dsf_command_connection=MagicMock(),
+            resolved_dirs=resolved,
+        )
+        yield {
+            "manager": manager,
+            "repo_url": special_char_repo,
+            "printer_fs": printer_fs,
+        }
+
+
+class TestSpecialCharacterFilePaths:
+    """Integration tests for files with spaces, hyphens, and special characters."""
+
+    def test_sync_lists_special_char_files(self, special_char_env):
+        env = special_char_env
+        result = env["manager"].sync(env["repo_url"], "1.0")
+        assert "error" not in result
+
+    def test_diff_with_spaces_in_filename(self, special_char_env):
+        env = special_char_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        diff = env["manager"].diff_all()
+        files = {f["file"]: f["status"] for f in diff}
+        assert "sys/my config.g" in files
+        assert files["sys/my config.g"] == "modified"
+
+    def test_diff_file_with_space(self, special_char_env):
+        env = special_char_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        detail = env["manager"].diff_file("sys/my config.g")
+        assert detail["status"] == "modified"
+        assert len(detail["hunks"]) > 0
+
+    def test_apply_file_with_space(self, special_char_env):
+        env = special_char_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("sys/my config.g")
+        assert result == {"applied": ["sys/my config.g"]}
+        assert "M584 X0" in (pfs / "sys" / "my config.g").read_text()
+
+    def test_apply_all_with_special_chars(self, special_char_env):
+        env = special_char_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_all()
+        assert "sys/my config.g" in result["applied"]
+        assert "sys/home-x_axis.g" in result["applied"]
+
+    def test_backup_restore_with_special_chars(self, special_char_env):
+        env = special_char_env
+        pfs = env["printer_fs"]
+        original = (pfs / "sys" / "my config.g").read_text()
+
+        env["manager"].sync(env["repo_url"], "1.0")
+        env["manager"].apply_all()
+        assert (pfs / "sys" / "my config.g").read_text() != original
+
+        backups = env["manager"].get_backups()
+        pre_update = [b for b in backups if "Pre-update" in b["message"]]
+        assert len(pre_update) > 0
+
+        env["manager"].restore_backup(pre_update[0]["hash"])
+        restored = (pfs / "sys" / "my config.g").read_text().rstrip("\n")
+        assert restored == original.rstrip("\n")
+
+    def test_apply_hunks_with_special_chars(self, special_char_env):
+        env = special_char_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        detail = env["manager"].diff_file("sys/my config.g")
+        assert detail["status"] == "modified"
+
+        result = env["manager"].apply_hunks("sys/my config.g", [0])
+        assert 0 in result["applied"]

@@ -322,3 +322,125 @@ class TestBackupExcludedPrefixes:
     def test_macros_path_not_excluded(self):
         path = "macros/print_start.g"
         assert not path.startswith(BACKUP_EXCLUDED_PREFIXES)
+
+
+# --- Multi-hunk offset accumulation tests ---
+
+
+class TestMultiHunkOffsetAccumulation:
+    """Tests for offset tracking across multiple hunks with mixed add/delete."""
+
+    def test_three_hunks_with_additions(self):
+        """Apply three hunks that each add a line, accumulating offset."""
+        current_lines = [f"line{i}\n" for i in range(40)]
+        reference_lines = list(current_lines)
+        # Insert a new line after positions 5, 20, and 35
+        reference_lines.insert(5, "ADDED_A\n")
+        reference_lines.insert(21, "ADDED_B\n")   # shifted by prior insert
+        reference_lines.insert(37, "ADDED_C\n")   # shifted by 2 prior inserts
+
+        current = "".join(current_lines)
+        reference = "".join(reference_lines)
+
+        hunks = ConfigManager._compute_hunks("test.g", current, reference)
+        assert len(hunks) >= 3
+
+        result_lines = current.splitlines(keepends=True)
+        offset = 0
+        for hunk in hunks:
+            success, result_lines, offset = _apply_single_hunk(result_lines, hunk, offset)
+            assert success is True
+
+        result = "".join(result_lines)
+        assert result == reference
+
+    def test_three_hunks_with_deletions(self):
+        """Apply three hunks that each delete a line, accumulating negative offset."""
+        current_lines = [f"line{i}\n" for i in range(40)]
+        reference_lines = list(current_lines)
+        # Remove lines at positions 5, 20, 35 (working backwards to keep indices stable)
+        del reference_lines[35]
+        del reference_lines[20]
+        del reference_lines[5]
+
+        current = "".join(current_lines)
+        reference = "".join(reference_lines)
+
+        hunks = ConfigManager._compute_hunks("test.g", current, reference)
+        assert len(hunks) >= 3
+
+        result_lines = current.splitlines(keepends=True)
+        offset = 0
+        for hunk in hunks:
+            success, result_lines, offset = _apply_single_hunk(result_lines, hunk, offset)
+            assert success is True
+
+        result = "".join(result_lines)
+        assert result == reference
+
+    def test_mixed_additions_and_deletions(self):
+        """Apply hunks with mixed adds and deletes, verifying offset correctness."""
+        current_lines = [f"line{i}\n" for i in range(40)]
+        reference_lines = list(current_lines)
+        # First change: replace line5 with two lines (net +1)
+        reference_lines[5] = "REPLACED_A1\n"
+        reference_lines.insert(6, "REPLACED_A2\n")
+        # Second change (indices shifted +1): delete line25 -> now at 26 (net -1)
+        del reference_lines[26]
+        # Third change: replace line35 -> now at 35 (net 0)
+        reference_lines[35] = "REPLACED_C\n"
+
+        current = "".join(current_lines)
+        reference = "".join(reference_lines)
+
+        hunks = ConfigManager._compute_hunks("test.g", current, reference)
+        assert len(hunks) >= 3
+
+        result_lines = current.splitlines(keepends=True)
+        offset = 0
+        for hunk in hunks:
+            success, result_lines, offset = _apply_single_hunk(result_lines, hunk, offset)
+            assert success is True
+
+        result = "".join(result_lines)
+        assert result == reference
+
+    def test_hunk_at_file_end(self):
+        """Apply a hunk that modifies the last lines of a file."""
+        current = "line1\nline2\nline3\nold_end\n"
+        reference = "line1\nline2\nline3\nnew_end\nextra\n"
+
+        hunks = ConfigManager._compute_hunks("test.g", current, reference)
+        assert len(hunks) >= 1
+
+        result_lines = current.splitlines(keepends=True)
+        offset = 0
+        for hunk in hunks:
+            success, result_lines, offset = _apply_single_hunk(result_lines, hunk, offset)
+            assert success is True
+
+        result = "".join(result_lines)
+        assert result == reference
+
+    def test_many_hunks_large_file(self):
+        """Stress test: apply many hunks across a large file."""
+        current_lines = [f"line{i}\n" for i in range(200)]
+        reference_lines = list(current_lines)
+        # Modify every 20th line
+        for i in range(0, 200, 20):
+            reference_lines[i] = f"CHANGED_{i}\n"
+
+        current = "".join(current_lines)
+        reference = "".join(reference_lines)
+
+        hunks = ConfigManager._compute_hunks("test.g", current, reference)
+        assert len(hunks) >= 5  # At least 5 separate hunks
+
+        result_lines = current.splitlines(keepends=True)
+        offset = 0
+        for hunk in hunks:
+            success, result_lines, offset = _apply_single_hunk(result_lines, hunk, offset)
+            assert success is True
+
+        result = "".join(result_lines)
+        assert result == reference

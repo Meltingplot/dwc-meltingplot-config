@@ -445,15 +445,38 @@ describe('MeltingplotConfig', () => {
     });
 
     describe('downloadBackup', () => {
-        it('opens download URL in new window', () => {
+        it('fetches ZIP and triggers download with .zip filename', async () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent();
-            window.open = jest.fn();
-            wrapper.vm.downloadBackup('abc123');
-            expect(window.open).toHaveBeenCalledWith(
-                expect.stringContaining('/backupDownload?hash=abc123'),
-                '_blank'
+
+            const mockBlob = new Blob(['PK'], { type: 'application/zip' });
+            const mockUrl = 'blob:http://localhost/fake-url';
+            global.fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                blob: () => Promise.resolve(mockBlob),
+            });
+            URL.createObjectURL = jest.fn().mockReturnValue(mockUrl);
+            URL.revokeObjectURL = jest.fn();
+
+            const clickSpy = jest.fn();
+            const origCreateElement = document.createElement.bind(document);
+            jest.spyOn(document, 'createElement').mockImplementation((tag) => {
+                const el = origCreateElement(tag);
+                if (tag === 'a') {
+                    el.click = clickSpy;
+                }
+                return el;
+            });
+
+            await wrapper.vm.downloadBackup('abc123def456');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/backupDownload?hash=abc123def456')
             );
+            expect(clickSpy).toHaveBeenCalled();
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith(mockUrl);
+
+            document.createElement.mockRestore();
         });
     });
 

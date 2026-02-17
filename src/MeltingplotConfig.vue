@@ -369,8 +369,24 @@ export default {
         }
       )
     },
-    downloadBackup(commitHash) {
-      window.open(`${API_BASE}/backupDownload?hash=${encodeURIComponent(commitHash)}`, '_blank')
+    async downloadBackup(commitHash) {
+      try {
+        const response = await fetch(`${API_BASE}/backupDownload?hash=${encodeURIComponent(commitHash)}`)
+        if (!response.ok) {
+          throw new Error(response.statusText)
+        }
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `backup-${commitHash.substring(0, 8)}.zip`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } catch (err) {
+        this.notify('Download failed: ' + err.message, 'error')
+      }
     },
     onBackupNotify({ text, color }) {
       this.notify(text, color)

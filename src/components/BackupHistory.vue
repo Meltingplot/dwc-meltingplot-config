@@ -53,6 +53,9 @@
             <v-btn icon small title="Restore this backup" @click.stop="$emit('restore', backup.hash)">
               <v-icon small>mdi-backup-restore</v-icon>
             </v-btn>
+            <v-btn icon small title="Delete backup" @click.stop="$emit('delete', backup.hash)">
+              <v-icon small color="error">mdi-delete</v-icon>
+            </v-btn>
           </v-list-item-action>
         </v-list-item>
 

@@ -260,3 +260,39 @@ def backup_archive(backup_path, commit_hash):
     if result.returncode != 0:
         raise RuntimeError(f"git archive failed: {result.stderr.decode().strip()}")
     return result.stdout
+
+
+def backup_delete(backup_path, commit_hash):
+    """Delete a specific backup commit from the history.
+
+    - If the commit is HEAD: ``git reset --hard HEAD~1``
+    - If the commit is in the middle: ``git rebase --onto <parent> <hash>``
+    - If the commit is the only one or the root with descendants: error.
+    """
+    head = _run(["rev-parse", "HEAD"], cwd=backup_path)
+
+    # Check if this commit has a parent.
+    try:
+        _run(["rev-parse", f"{commit_hash}^"], cwd=backup_path)
+        has_parent = True
+    except RuntimeError:
+        has_parent = False
+
+    is_head = head == commit_hash or head.startswith(commit_hash) or commit_hash.startswith(head)
+
+    if is_head:
+        if not has_parent:
+            raise RuntimeError("Cannot delete the only backup")
+        _run(["reset", "--hard", "HEAD~1"], cwd=backup_path)
+        logger.info("Deleted backup (HEAD reset): %s", commit_hash[:8])
+    else:
+        if not has_parent:
+            raise RuntimeError(
+                "Cannot delete the oldest backup while newer ones exist. "
+                "Delete newer backups first."
+            )
+        _run(
+            ["rebase", "--onto", f"{commit_hash}^", commit_hash, "-X", "theirs"],
+            cwd=backup_path,
+        )
+        logger.info("Deleted backup (rebased): %s", commit_hash[:8])

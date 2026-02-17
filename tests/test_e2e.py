@@ -565,3 +565,44 @@ class TestE2EManualBackupFlow:
         assert dl_resp["contentType"] == "application/zip"
         assert dl_resp["responseType"] == "file"
         assert os.path.isfile(dl_resp["body"])
+
+
+class TestE2EDeleteBackupFlow:
+    """Delete backup through handlers with real git repos."""
+
+    def test_delete_backup_removes_from_history(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+        d.handle_apply(cmd, mgr, "", {})
+
+        backups_before = _body(d.handle_backups(cmd, mgr, "", {}))["backups"]
+        assert len(backups_before) >= 2
+
+        # Delete the most recent backup (HEAD)
+        latest_hash = backups_before[0]["hash"]
+        resp = d.handle_delete_backup(cmd, mgr, "", {"hash": latest_hash})
+        assert resp["status"] == 200
+        body = _body(resp)
+        assert body["deleted"] == latest_hash
+
+        backups_after = _body(d.handle_backups(cmd, mgr, "", {}))["backups"]
+        assert len(backups_after) == len(backups_before) - 1
+        assert latest_hash not in [b["hash"] for b in backups_after]
+
+    def test_delete_only_backup_returns_error(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        # Create a single manual backup
+        d.handle_manual_backup(cmd, mgr, "", {})
+
+        backups = _body(d.handle_backups(cmd, mgr, "", {}))["backups"]
+        assert len(backups) == 1
+
+        resp = d.handle_delete_backup(cmd, mgr, "", {"hash": backups[0]["hash"]})
+        assert resp["status"] == 400
+        body = _body(resp)
+        assert "error" in body
+
+    def test_delete_missing_hash_returns_400(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        resp = d.handle_delete_backup(cmd, mgr, "", {})
+        assert resp["status"] == 400

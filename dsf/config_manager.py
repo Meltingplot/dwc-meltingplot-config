@@ -10,6 +10,7 @@ from git_utils import (
     backup_archive,
     backup_checkout,
     backup_commit,
+    backup_delete,
     backup_file_content,
     backup_files_at,
     backup_log,
@@ -505,6 +506,11 @@ class ConfigManager:
         backup_checkout(BACKUP_DIR, commit_hash)
         self._create_backup(f"Restored from backup {commit_hash[:8]}")
         return {"restored": files}
+
+    def delete_backup(self, commit_hash):
+        """Delete a specific backup commit from the history."""
+        backup_delete(BACKUP_DIR, commit_hash)
+        return {"deleted": commit_hash}
 
 
 # --- Hunk patching helpers ---

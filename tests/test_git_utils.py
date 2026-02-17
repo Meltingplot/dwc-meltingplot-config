@@ -329,3 +329,85 @@ class TestBackupCheckout:
         # sys restored, macros untouched
         assert open(os.path.join(wt, "sys", "config.g")).read() == "original\n"
         assert open(os.path.join(wt, "macros", "start.g")).read() == "new macro\n"
+
+
+class TestBackupDelete:
+    """Tests for backup_delete — removing backup commits."""
+
+    @pytest.fixture
+    def delete_env(self, tmp_path):
+        worktree = tmp_path / "printer_sd"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("v1\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        c1 = git_utils.backup_commit(str(backup_dir), "first", paths=["sys"])
+
+        (worktree / "sys" / "config.g").write_text("v2\n")
+        c2 = git_utils.backup_commit(str(backup_dir), "second", paths=["sys"])
+
+        (worktree / "sys" / "config.g").write_text("v3\n")
+        c3 = git_utils.backup_commit(str(backup_dir), "third", paths=["sys"])
+
+        return {
+            "backup": str(backup_dir),
+            "worktree": str(worktree),
+            "commits": [c1, c2, c3],
+        }
+
+    def test_delete_head_commit(self, delete_env):
+        """Deleting HEAD removes the most recent commit."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[2])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        hashes = [e["hash"] for e in log]
+        assert commits[2] not in hashes
+        assert commits[1] in hashes
+        assert commits[0] in hashes
+
+    def test_delete_middle_commit(self, delete_env):
+        """Deleting a non-HEAD commit rebases descendants."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[1])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        hashes = [e["hash"] for e in log]
+        assert commits[1] not in hashes
+        # Root commit should still exist
+        assert commits[0] in hashes
+        # Should have 2 commits remaining
+        assert len(log) == 2
+
+    def test_delete_only_commit_raises(self, tmp_path):
+        """Cannot delete the only backup commit."""
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("v1\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        c = git_utils.backup_commit(str(backup_dir), "only", paths=["sys"])
+
+        with pytest.raises(RuntimeError, match="Cannot delete the only backup"):
+            git_utils.backup_delete(str(backup_dir), c)
+
+    def test_delete_root_with_descendants_raises(self, delete_env):
+        """Cannot delete the oldest backup while newer ones exist."""
+        commits = delete_env["commits"]
+        with pytest.raises(RuntimeError, match="Cannot delete the oldest backup"):
+            git_utils.backup_delete(delete_env["backup"], commits[0])
+
+    def test_delete_preserves_remaining_history(self, delete_env):
+        """After deleting HEAD, the remaining log messages are intact."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[2])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        messages = [e["message"] for e in log]
+        assert "second" in messages
+        assert "first" in messages
+        assert "third" not in messages

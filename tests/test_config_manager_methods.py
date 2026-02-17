@@ -757,3 +757,18 @@ class TestRestoreBackupCheckoutFailure:
         ):
             with pytest.raises(RuntimeError, match="checkout failed"):
                 manager.restore_backup("abc123")
+
+
+class TestDeleteBackup:
+    """Tests for delete_backup — delegates to git_utils.backup_delete."""
+
+    def test_delete_backup_delegates(self, manager):
+        with patch("config_manager.backup_delete") as mock_delete:
+            result = manager.delete_backup("abc123")
+        mock_delete.assert_called_once_with(BACKUP_DIR, "abc123")
+        assert result == {"deleted": "abc123"}
+
+    def test_delete_backup_propagates_error(self, manager):
+        with patch("config_manager.backup_delete", side_effect=RuntimeError("Cannot delete")):
+            with pytest.raises(RuntimeError, match="Cannot delete"):
+                manager.delete_backup("abc123")

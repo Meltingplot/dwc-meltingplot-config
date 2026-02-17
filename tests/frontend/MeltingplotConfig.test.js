@@ -444,6 +444,37 @@ describe('MeltingplotConfig', () => {
         });
     });
 
+    describe('deleteBackup', () => {
+        it('opens confirmation dialog', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.deleteBackup('abc123');
+            expect(wrapper.vm.confirmDialog.show).toBe(true);
+            expect(wrapper.vm.confirmDialog.title).toBe('Delete Backup');
+        });
+
+        it('calls deleteBackup API on confirm', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.deleteBackup('abc123');
+
+            mockFetchSuccess({ deleted: 'abc123' });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.snackbar.color).toBe('success');
+            expect(wrapper.vm.snackbar.text).toContain('deleted');
+        });
+
+        it('shows error on failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.deleteBackup('abc123');
+
+            mockFetchError(400, 'Cannot delete the only backup');
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.snackbar.color).toBe('error');
+        });
+    });
+
     describe('downloadBackup', () => {
         it('fetches ZIP and triggers download with .zip filename', async () => {
             mockFetchSuccess({ branches: [] });

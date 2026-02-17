@@ -370,6 +370,39 @@ class TestHandleSettings:
 # --- handle_restore edge cases ---
 
 
+class TestHandleDeleteBackup:
+    def test_delete_missing_hash(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        resp = daemon.handle_delete_backup(cmd, manager, "", {})
+        assert resp["status"] == 400
+
+    def test_delete_success(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.delete_backup.return_value = {"deleted": "abc123"}
+
+        resp = daemon.handle_delete_backup(cmd, manager, "", {"hash": "abc123"})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert body["deleted"] == "abc123"
+        manager.delete_backup.assert_called_once_with("abc123")
+
+    def test_delete_runtime_error_returns_400(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.delete_backup.side_effect = RuntimeError("Cannot delete the only backup")
+
+        resp = daemon.handle_delete_backup(cmd, manager, "", {"hash": "abc123"})
+        assert resp["status"] == 400
+        body = json.loads(resp["body"])
+        assert "Cannot delete" in body["error"]
+
+
 class TestHandleRestoreEdgeCases:
     def test_restore_missing_hash(self):
         daemon = _import_daemon()

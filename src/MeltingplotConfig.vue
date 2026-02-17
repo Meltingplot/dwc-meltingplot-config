@@ -54,6 +54,7 @@
                 :loading="loadingBackups"
                 @restore="restoreBackup"
                 @download="downloadBackup"
+                @delete="deleteBackup"
                 @refresh="loadBackups"
                 @notify="onBackupNotify"
               />
@@ -365,6 +366,21 @@ export default {
             await this.loadDiff()
           } catch (err) {
             this.notify('Restore failed: ' + err.message, 'error')
+          }
+        }
+      )
+    },
+    deleteBackup(commitHash) {
+      this.confirm(
+        'Delete Backup',
+        'Are you sure you want to permanently delete this backup? This action cannot be undone.',
+        async () => {
+          try {
+            await this.apiPost(`/deleteBackup?hash=${encodeURIComponent(commitHash)}`)
+            this.notify('Backup deleted', 'success')
+            await this.loadBackups()
+          } catch (err) {
+            this.notify('Delete failed: ' + err.message, 'error')
           }
         }
       )

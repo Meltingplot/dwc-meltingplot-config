@@ -56,7 +56,7 @@ def get_plugin_data(cmd):
 
 
 def set_plugin_data(cmd, key, value):
-    """Update a single field in plugin sbcData."""
+    """Update a single field in plugin data."""
     try:
         cmd.set_plugin_data(PLUGIN_ID, key, value)
     except Exception as exc:

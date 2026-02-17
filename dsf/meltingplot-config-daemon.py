@@ -48,6 +48,43 @@ PLUGIN_ID = "MeltingplotConfig"
 API_NAMESPACE = "MeltingplotConfig"
 
 
+# --- Directory mapping from DSF object model ---
+
+# Known directory property names on the DSF Directories object (snake_case).
+_DIR_ATTRS = ["filaments", "firmware", "g_codes", "macros", "menu", "system", "web"]
+
+
+def build_directory_map(model):
+    """Build a ref-folder → printer-path mapping from the DSF object model.
+
+    Reads model.directories (a typed Directories object with properties like
+    'system' → '0:/sys', 'macros' → '0:/macros', etc.) and produces a dict
+    mapping reference repo top-level folders to full printer paths:
+        {'sys/': '0:/sys/', 'macros/': '0:/macros/', ...}
+    """
+    dirs = getattr(model, "directories", None)
+    if dirs is None:
+        return {}
+
+    dir_map = {}
+    for attr in _DIR_ATTRS:
+        dsf_path = getattr(dirs, attr, None)
+        if not dsf_path or not isinstance(dsf_path, str):
+            continue
+        # Ensure trailing slash: "0:/sys" -> "0:/sys/"
+        if not dsf_path.endswith("/"):
+            dsf_path += "/"
+        # Extract folder name after volume prefix: "0:/sys/" -> "sys/"
+        if ":/" in dsf_path:
+            ref_folder = dsf_path.split(":/", 1)[1]
+        else:
+            ref_folder = dsf_path
+        if ref_folder:
+            dir_map[ref_folder] = dsf_path
+
+    return dir_map
+
+
 # --- Plugin data helpers ---
 
 
@@ -344,22 +381,32 @@ def main():
     cmd.connect()
     logger.info("Connected to DSF")
 
-    # Detect firmware version on startup
-    # The DSF ObjectModel uses attribute access with snake_case names:
-    #   model.boards -> list of Board objects
-    #   board.firmware_version -> str
+    # Read object model once at startup for firmware version + directory mappings
+    dir_map = None
     try:
         model = cmd.get_object_model()
+
+        # Detect firmware version
         boards = getattr(model, "boards", None) or []
         if boards:
             fw = getattr(boards[0], "firmware_version", "") or ""
             if fw:
                 set_plugin_data(cmd, "detectedFirmwareVersion", fw)
                 logger.info("Detected firmware version: %s", fw)
-    except Exception as exc:
-        logger.warning("Could not detect firmware version: %s", exc)
 
-    manager = ConfigManager(dsf_command_connection=cmd)
+        # Build directory mapping from object model
+        dir_map = build_directory_map(model)
+        if dir_map:
+            logger.info("Directory mappings from DSF: %s", dir_map)
+        else:
+            logger.warning("No directory mappings from DSF, using defaults")
+    except Exception as exc:
+        logger.warning("Could not read object model: %s", exc)
+
+    manager = ConfigManager(
+        dsf_command_connection=cmd,
+        directory_map=dir_map if dir_map else None,
+    )
 
     # Register HTTP endpoints (each runs in its own async handler thread)
     endpoints = register_endpoints(cmd, manager)

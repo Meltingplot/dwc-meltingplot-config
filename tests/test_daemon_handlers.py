@@ -491,3 +491,79 @@ class TestFirmwareDetection:
         boards = getattr(model, "boards", None) or []
         fw = getattr(boards[0], "firmware_version", "") or ""
         assert fw == ""
+
+
+# --- build_directory_map ---
+
+
+class TestBuildDirectoryMap:
+    """Tests for build_directory_map which reads model.directories."""
+
+    def test_builds_map_from_directories(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments="0:/filaments",
+            firmware="0:/firmware",
+            g_codes="0:/gcodes",
+            macros="0:/macros",
+            menu="0:/menu",
+            system="0:/sys",
+            web="0:/www",
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert result == {
+            "filaments/": "0:/filaments/",
+            "firmware/": "0:/firmware/",
+            "gcodes/": "0:/gcodes/",
+            "macros/": "0:/macros/",
+            "menu/": "0:/menu/",
+            "sys/": "0:/sys/",
+            "www/": "0:/www/",
+        }
+
+    def test_handles_trailing_slashes(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments="0:/filaments/",
+            firmware="0:/firmware/",
+            g_codes="0:/gcodes/",
+            macros="0:/macros/",
+            menu="0:/menu/",
+            system="0:/sys/",
+            web="0:/www/",
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert result["sys/"] == "0:/sys/"
+        assert result["macros/"] == "0:/macros/"
+
+    def test_missing_directories_attr(self):
+        daemon = _import_daemon()
+        model = SimpleNamespace()
+        result = daemon.build_directory_map(model)
+        assert result == {}
+
+    def test_none_directories(self):
+        daemon = _import_daemon()
+        model = SimpleNamespace(directories=None)
+        result = daemon.build_directory_map(model)
+        assert result == {}
+
+    def test_skips_none_values(self):
+        daemon = _import_daemon()
+        dirs = SimpleNamespace(
+            filaments=None,
+            firmware="0:/firmware",
+            g_codes=None,
+            macros="0:/macros",
+            menu=None,
+            system="0:/sys",
+            web=None,
+        )
+        model = SimpleNamespace(directories=dirs)
+        result = daemon.build_directory_map(model)
+        assert "sys/" in result
+        assert "macros/" in result
+        assert "firmware/" in result
+        assert len(result) == 3

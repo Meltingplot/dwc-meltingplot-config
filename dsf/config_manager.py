@@ -30,19 +30,25 @@ PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
 REFERENCE_DIR = os.path.join(PLUGIN_DIR, "reference")
 BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
 
-# Directories in the reference repo and their corresponding printer paths
-MANAGED_DIRS = {
+# Default directory mapping (fallback when DSF object model is unavailable).
+# In production, the daemon reads model.directories and builds this dynamically.
+DEFAULT_DIRECTORY_MAP = {
     "sys/": "0:/sys/",
     "macros/": "0:/macros/",
     "filaments/": "0:/filaments/",
+    "firmware/": "0:/firmware/",
+    "gcodes/": "0:/gcodes/",
+    "menu/": "0:/menu/",
+    "www/": "0:/www/",
 }
 
 
 class ConfigManager:
     """Manages reference sync, diffing, applying, and backups."""
 
-    def __init__(self, dsf_command_connection=None):
+    def __init__(self, dsf_command_connection=None, directory_map=None):
         self._dsf = dsf_command_connection
+        self._dir_map = directory_map if directory_map is not None else DEFAULT_DIRECTORY_MAP
         init_backup_repo(BACKUP_DIR)
 
     # --- File I/O via DSF ---
@@ -71,15 +77,17 @@ class ConfigManager:
         with open(full_path, "r", encoding="utf-8", errors="replace") as f:
             return f.read()
 
-    @staticmethod
-    def _ref_to_printer_path(ref_path):
+    def _ref_to_printer_path(self, ref_path):
         """Convert a reference repo path to a printer path.
 
         e.g., 'sys/config.g' -> '0:/sys/config.g'
+
+        The mapping is built from the DSF object model's directories
+        property at startup, or falls back to DEFAULT_DIRECTORY_MAP.
         """
-        for ref_prefix, printer_prefix in MANAGED_DIRS.items():
+        for ref_prefix, printer_prefix in self._dir_map.items():
             if ref_path.startswith(ref_prefix):
-                return printer_prefix + ref_path[len(ref_prefix) :]
+                return printer_prefix + ref_path[len(ref_prefix):]
         return None
 
     # --- Sync ---

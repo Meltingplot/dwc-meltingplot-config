@@ -129,7 +129,7 @@
         <v-card-actions>
           <v-spacer />
           <v-btn text @click="confirmDialog.show = false">Cancel</v-btn>
-          <v-btn color="primary" @click="confirmDialog.action">Confirm</v-btn>
+          <v-btn color="primary" @click="confirmDialog.show = false; confirmDialog.action()">Confirm</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

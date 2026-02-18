@@ -138,14 +138,14 @@ export default {
       expandedPanels: []
     }
   },
-  watch: {
-    files() {
-      this.expandedPanels = []
-    }
-  },
   computed: {
     changedFiles() {
       return this.files.filter(f => f.status !== 'unchanged')
+    }
+  },
+  watch: {
+    files() {
+      this.expandedPanels = []
     }
   },
   methods: {

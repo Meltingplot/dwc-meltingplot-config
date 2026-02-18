@@ -84,6 +84,87 @@ class TestMainStartup:
         )
         return SimpleNamespace(boards=[board], directories=dirs)
 
+    def test_startup_restores_persisted_settings(self):
+        """Persisted settings should be restored via set_plugin_data on startup."""
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        model = self._make_model()
+        cmd.get_object_model.return_value = model
+        cmd.resolve_path.side_effect = lambda p: f"/opt/dsf/sd/{p.split(':/', 1)[1]}"
+
+        persisted = {
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "firmwareBranchOverride": "custom",
+            "activeBranch": "3.5",
+        }
+
+        with (
+            patch.object(daemon, "CommandConnection", return_value=cmd),
+            patch.object(daemon, "ConfigManager"),
+            patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "load_settings_from_disk", return_value=persisted),
+            patch("time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            daemon.main()
+
+        # All persisted keys should be set via set_plugin_data
+        calls = {c[0][1]: c[0][2] for c in cmd.set_plugin_data.call_args_list}
+        assert calls.get("referenceRepoUrl") == "https://example.com/repo.git"
+        assert calls.get("firmwareBranchOverride") == "custom"
+        assert calls.get("activeBranch") == "3.5"
+
+    def test_startup_skips_empty_persisted_values(self):
+        """Empty string values from disk should not be restored."""
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        model = self._make_model()
+        cmd.get_object_model.return_value = model
+        cmd.resolve_path.side_effect = lambda p: f"/opt/dsf/sd/{p.split(':/', 1)[1]}"
+
+        persisted = {
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "firmwareBranchOverride": "",
+        }
+
+        with (
+            patch.object(daemon, "CommandConnection", return_value=cmd),
+            patch.object(daemon, "ConfigManager"),
+            patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "load_settings_from_disk", return_value=persisted),
+            patch("time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            daemon.main()
+
+        # referenceRepoUrl should be set, firmwareBranchOverride should be skipped
+        calls = {c[0][1]: c[0][2] for c in cmd.set_plugin_data.call_args_list
+                 if c[0][1] in ("referenceRepoUrl", "firmwareBranchOverride")}
+        assert "referenceRepoUrl" in calls
+        assert "firmwareBranchOverride" not in calls
+
+    def test_startup_with_no_persisted_settings(self):
+        """When no settings file exists, startup continues normally."""
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        model = self._make_model()
+        cmd.get_object_model.return_value = model
+        cmd.resolve_path.side_effect = lambda p: f"/opt/dsf/sd/{p.split(':/', 1)[1]}"
+
+        with (
+            patch.object(daemon, "CommandConnection", return_value=cmd),
+            patch.object(daemon, "ConfigManager"),
+            patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "load_settings_from_disk", return_value={}),
+            patch("time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            daemon.main()
+
+        # Only firmware version should be set (not persisted settings)
+        persisted_keys = {"referenceRepoUrl", "firmwareBranchOverride", "activeBranch"}
+        for c in cmd.set_plugin_data.call_args_list:
+            if c[0][1] in persisted_keys:
+                # Should NOT have been called for any persisted key
+                assert False, f"set_plugin_data called for {c[0][1]} with no persisted data"
+
     def test_startup_detects_firmware_and_resolves_paths(self):
         daemon = _import_daemon()
         cmd = MagicMock()

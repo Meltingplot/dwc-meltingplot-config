@@ -7,6 +7,7 @@ config sync / diff / apply requests from the DWC frontend.
 
 import json
 import logging
+import os
 import sys
 import tempfile
 import time
@@ -35,7 +36,7 @@ try:
 except ImportError:
     pass  # dsf not installed (e.g. test environment)
 
-from config_manager import ConfigManager
+from config_manager import ConfigManager, PLUGIN_DIR
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,52 @@ logger = logging.getLogger("MeltingplotConfig")
 
 PLUGIN_ID = "MeltingplotConfig"
 API_NAMESPACE = "MeltingplotConfig"
+
+# --- Persistent settings (survive plugin disable/enable) ---
+
+SETTINGS_FILE = os.path.join(PLUGIN_DIR, "settings.json")
+
+# Plugin data keys that are persisted to disk.  detectedFirmwareVersion is
+# excluded because it is re-detected from hardware at every startup.
+PERSISTED_KEYS = [
+    "referenceRepoUrl",
+    "firmwareBranchOverride",
+    "activeBranch",
+    "lastSyncTimestamp",
+    "status",
+]
+
+
+def load_settings_from_disk():
+    """Load persisted plugin settings from disk.
+
+    Returns a dict of key-value pairs, or {} if the file is missing/corrupt.
+    """
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        return {k: v for k, v in data.items() if k in PERSISTED_KEYS}
+    except (FileNotFoundError, json.JSONDecodeError, IOError, OSError):
+        return {}
+
+
+def save_settings_to_disk(updates):
+    """Merge *updates* into the persisted settings file.
+
+    Reads the current file, updates only PERSISTED_KEYS, and writes back.
+    """
+    try:
+        current = load_settings_from_disk()
+        for key, value in updates.items():
+            if key in PERSISTED_KEYS:
+                current[key] = value
+        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2)
+    except (IOError, OSError) as exc:
+        logger.warning("Failed to save settings to disk: %s", exc)
 
 
 # --- Directory mapping from DSF object model ---
@@ -161,6 +208,12 @@ def handle_sync(cmd, manager, _body, _queries):
     set_plugin_data(cmd, "activeBranch", result["activeBranch"])
     set_plugin_data(cmd, "lastSyncTimestamp", now)
     set_plugin_data(cmd, "status", "up_to_date")
+
+    save_settings_to_disk({
+        "activeBranch": result["activeBranch"],
+        "lastSyncTimestamp": now,
+        "status": "up_to_date",
+    })
 
     return json_response(result)
 
@@ -319,10 +372,16 @@ def handle_settings(cmd, _manager, body, _queries):
     except json.JSONDecodeError:
         return error_response("Invalid JSON body")
 
+    persisted_updates = {}
     if "referenceRepoUrl" in data:
         set_plugin_data(cmd, "referenceRepoUrl", data["referenceRepoUrl"])
+        persisted_updates["referenceRepoUrl"] = data["referenceRepoUrl"]
     if "firmwareBranchOverride" in data:
         set_plugin_data(cmd, "firmwareBranchOverride", data["firmwareBranchOverride"])
+        persisted_updates["firmwareBranchOverride"] = data["firmwareBranchOverride"]
+
+    if persisted_updates:
+        save_settings_to_disk(persisted_updates)
 
     return json_response({"ok": True})
 
@@ -412,6 +471,14 @@ def main():
     cmd = CommandConnection()
     cmd.connect()
     logger.info("Connected to DSF")
+
+    # Restore persisted settings so user config survives plugin reload
+    persisted = load_settings_from_disk()
+    if persisted:
+        for key, value in persisted.items():
+            if value:  # skip empty strings
+                set_plugin_data(cmd, key, value)
+        logger.info("Restored %d persisted setting(s) from disk", len(persisted))
 
     # Read object model once at startup for firmware version + directory mappings
     dir_map = None

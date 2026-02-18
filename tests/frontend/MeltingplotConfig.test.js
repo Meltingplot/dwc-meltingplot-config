@@ -444,16 +444,70 @@ describe('MeltingplotConfig', () => {
         });
     });
 
-    describe('downloadBackup', () => {
-        it('opens download URL in new window', () => {
+    describe('deleteBackup', () => {
+        it('opens confirmation dialog', () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent();
-            window.open = jest.fn();
-            wrapper.vm.downloadBackup('abc123');
-            expect(window.open).toHaveBeenCalledWith(
-                expect.stringContaining('/backupDownload?hash=abc123'),
-                '_blank'
+            wrapper.vm.deleteBackup('abc123');
+            expect(wrapper.vm.confirmDialog.show).toBe(true);
+            expect(wrapper.vm.confirmDialog.title).toBe('Delete Backup');
+        });
+
+        it('calls deleteBackup API on confirm', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.deleteBackup('abc123');
+
+            mockFetchSuccess({ deleted: 'abc123' });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.snackbar.color).toBe('success');
+            expect(wrapper.vm.snackbar.text).toContain('deleted');
+        });
+
+        it('shows error on failure', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.deleteBackup('abc123');
+
+            mockFetchError(400, 'Cannot delete the only backup');
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.snackbar.color).toBe('error');
+        });
+    });
+
+    describe('downloadBackup', () => {
+        it('fetches ZIP and triggers download with .zip filename', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+
+            const mockBlob = new Blob(['PK'], { type: 'application/zip' });
+            const mockUrl = 'blob:http://localhost/fake-url';
+            global.fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                blob: () => Promise.resolve(mockBlob),
+            });
+            URL.createObjectURL = jest.fn().mockReturnValue(mockUrl);
+            URL.revokeObjectURL = jest.fn();
+
+            const clickSpy = jest.fn();
+            const origCreateElement = document.createElement.bind(document);
+            jest.spyOn(document, 'createElement').mockImplementation((tag) => {
+                const el = origCreateElement(tag);
+                if (tag === 'a') {
+                    el.click = clickSpy;
+                }
+                return el;
+            });
+
+            await wrapper.vm.downloadBackup('abc123def456');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/backupDownload?hash=abc123def456')
             );
+            expect(clickSpy).toHaveBeenCalled();
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith(mockUrl);
+
+            document.createElement.mockRestore();
         });
     });
 

@@ -300,6 +300,18 @@ def handle_restore(_cmd, manager, _body, queries):
     return json_response(result)
 
 
+def handle_delete_backup(_cmd, manager, _body, queries):
+    """POST /machine/MeltingplotConfig/deleteBackup?hash=<hash>"""
+    commit_hash = queries.get("hash", "")
+    if not commit_hash:
+        return error_response("Commit hash required (use ?hash= query param)")
+    try:
+        result = manager.delete_backup(commit_hash)
+        return json_response(result)
+    except RuntimeError as exc:
+        return error_response(str(exc))
+
+
 def handle_settings(cmd, _manager, body, _queries):
     """POST /machine/MeltingplotConfig/settings"""
     try:
@@ -332,6 +344,7 @@ ENDPOINTS = {
     ("GET", "backup"): handle_backup,
     ("GET", "backupDownload"): handle_backup_download,
     ("POST", "restore"): handle_restore,
+    ("POST", "deleteBackup"): handle_delete_backup,
     ("POST", "settings"): handle_settings,
 }
 
@@ -429,8 +442,13 @@ def main():
     resolved_dirs = {}
     for ref_folder, printer_prefix in effective_dir_map.items():
         try:
-            # resolve_path wants a path without trailing slash
-            real_path = cmd.resolve_path(printer_prefix.rstrip("/"))
+            # resolve_path wants a path without trailing slash.
+            # dsf-python's resolve_path returns a Response object (not a
+            # plain string) — the actual path is in response.result.
+            response = cmd.resolve_path(printer_prefix.rstrip("/"))
+            real_path = getattr(response, "result", response)
+            if not isinstance(real_path, str):
+                real_path = str(real_path)
             if not real_path.endswith("/"):
                 real_path += "/"
             resolved_dirs[printer_prefix] = real_path

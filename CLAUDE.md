@@ -74,6 +74,12 @@ These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at s
 
 **Our implementation:** `build_directory_map(model)` in the daemon reads these attributes and builds a `ref_folder → printer_path` mapping (e.g., `{"sys/": "0:/sys/"}`). This mapping is passed to `ConfigManager` to convert between reference repo paths and printer paths.
 
+### 4. `resolve_path()` returns a Response object, not a string
+
+**Bug:** `BaseCommandConnection.resolve_path()` returns the raw `Response` object from `perform_command()`. Unlike other methods (e.g., `remove_http_endpoint`, `set_network_protocol`) which unwrap with `res.result`, `resolve_path` does not. Calling `.endswith()` on the Response fails with `AttributeError`.
+
+**Workaround:** Extract the actual path via `getattr(response, "result", response)` after calling `cmd.resolve_path()`. The daemon does this in the path-resolution loop at startup.
+
 ## Development Setup
 
 ### Building the frontend
@@ -162,7 +168,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 | Reference config source | Git repo — one repo per printer model |
 | Firmware versioning | One branch per firmware version |
 | Backend runtime | Python SBC daemon via DSF (venv with `sbcPythonDependencies`) |
-| Backup strategy | Local git repo at `/opt/dsf/plugins/MeltingplotConfig/backups/` |
+| Backup strategy | Worktree-based git repo — tracks sys/, macros/, filaments/ in-place |
 | Partial apply | Hunk-level selection — users pick individual change blocks |
 
 ## HTTP API

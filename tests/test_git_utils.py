@@ -185,3 +185,229 @@ class TestBackupRepo:
     def test_empty_log(self, tmp_path):
         empty = str(tmp_path / "nonexistent")
         assert git_utils.backup_log(empty) == []
+
+
+class TestBackupRepoWorktree:
+    """Backup repo with core.worktree pointing at a separate directory."""
+
+    @pytest.fixture
+    def worktree_env(self, tmp_path):
+        """Create a backup repo with a separate worktree directory."""
+        worktree = tmp_path / "printer_sd"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("G28\n")
+        (worktree / "macros").mkdir()
+        (worktree / "macros" / "start.g").write_text("T0\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        return {"backup": str(backup_dir), "worktree": str(worktree)}
+
+    def test_init_sets_worktree(self, worktree_env):
+        result = subprocess.run(
+            ["git", "config", "core.worktree"],
+            cwd=worktree_env["backup"],
+            capture_output=True, text=True,
+        )
+        assert result.stdout.strip() == worktree_env["worktree"]
+
+    def test_commit_with_paths(self, worktree_env):
+        commit = git_utils.backup_commit(
+            worktree_env["backup"], "first backup", paths=["sys", "macros"]
+        )
+        assert commit is not None
+        files = git_utils.backup_files_at(worktree_env["backup"], commit)
+        assert "sys/config.g" in files
+        assert "macros/start.g" in files
+
+    def test_commit_selective_paths(self, worktree_env):
+        """Only the specified paths are staged."""
+        commit = git_utils.backup_commit(
+            worktree_env["backup"], "sys only", paths=["sys"]
+        )
+        assert commit is not None
+        files = git_utils.backup_files_at(worktree_env["backup"], commit)
+        assert "sys/config.g" in files
+        assert "macros/start.g" not in files
+
+    def test_worktree_tracks_changes(self, worktree_env):
+        """Changes in the worktree directory are detected by the backup repo."""
+        git_utils.backup_commit(
+            worktree_env["backup"], "initial", paths=["sys", "macros"]
+        )
+        # Modify a file in the worktree
+        wt = worktree_env["worktree"]
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("G28\nM906 X800\n")
+        commit = git_utils.backup_commit(
+            worktree_env["backup"], "updated", paths=["sys"]
+        )
+        assert commit is not None
+        content = git_utils.backup_file_content(
+            worktree_env["backup"], commit, "sys/config.g"
+        )
+        assert "M906 X800" in content
+
+    def test_init_idempotent_updates_worktree(self, worktree_env):
+        """Re-init on existing repo updates core.worktree."""
+        new_wt = worktree_env["worktree"] + "_new"
+        os.makedirs(new_wt, exist_ok=True)
+        git_utils.init_backup_repo(worktree_env["backup"], worktree=new_wt)
+        result = subprocess.run(
+            ["git", "config", "core.worktree"],
+            cwd=worktree_env["backup"],
+            capture_output=True, text=True,
+        )
+        assert result.stdout.strip() == new_wt
+
+    def test_backup_includes_subfolders(self, worktree_env):
+        """Files in subdirectories are tracked."""
+        wt = worktree_env["worktree"]
+        os.makedirs(os.path.join(wt, "sys", "sub"), exist_ok=True)
+        with open(os.path.join(wt, "sys", "sub", "deep.g"), "w") as f:
+            f.write("M999\n")
+        commit = git_utils.backup_commit(
+            worktree_env["backup"], "deep", paths=["sys"]
+        )
+        files = git_utils.backup_files_at(worktree_env["backup"], commit)
+        assert "sys/sub/deep.g" in files
+
+
+class TestBackupCheckout:
+    """Tests for backup_checkout — restoring files from a commit."""
+
+    @pytest.fixture
+    def checkout_env(self, tmp_path):
+        worktree = tmp_path / "printer_sd"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("original\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        commit = git_utils.backup_commit(
+            str(backup_dir), "snapshot", paths=["sys"]
+        )
+        return {
+            "backup": str(backup_dir),
+            "worktree": str(worktree),
+            "snapshot_hash": commit,
+        }
+
+    def test_checkout_restores_file(self, checkout_env):
+        wt = checkout_env["worktree"]
+        # Modify file after snapshot
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("changed\n")
+        assert "changed" in open(os.path.join(wt, "sys", "config.g")).read()
+
+        git_utils.backup_checkout(
+            checkout_env["backup"], checkout_env["snapshot_hash"]
+        )
+        assert open(os.path.join(wt, "sys", "config.g")).read() == "original\n"
+
+    def test_checkout_with_paths(self, checkout_env):
+        wt = checkout_env["worktree"]
+        # Add a second dir and commit
+        os.makedirs(os.path.join(wt, "macros"), exist_ok=True)
+        with open(os.path.join(wt, "macros", "start.g"), "w") as f:
+            f.write("T0\n")
+        git_utils.backup_commit(
+            checkout_env["backup"], "with macros", paths=["sys", "macros"]
+        )
+        # Modify both
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("new sys\n")
+        with open(os.path.join(wt, "macros", "start.g"), "w") as f:
+            f.write("new macro\n")
+
+        # Checkout only the snapshot (which has only sys/)
+        git_utils.backup_checkout(
+            checkout_env["backup"], checkout_env["snapshot_hash"], paths=["sys"]
+        )
+        # sys restored, macros untouched
+        assert open(os.path.join(wt, "sys", "config.g")).read() == "original\n"
+        assert open(os.path.join(wt, "macros", "start.g")).read() == "new macro\n"
+
+
+class TestBackupDelete:
+    """Tests for backup_delete — removing backup commits."""
+
+    @pytest.fixture
+    def delete_env(self, tmp_path):
+        worktree = tmp_path / "printer_sd"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("v1\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        c1 = git_utils.backup_commit(str(backup_dir), "first", paths=["sys"])
+
+        (worktree / "sys" / "config.g").write_text("v2\n")
+        c2 = git_utils.backup_commit(str(backup_dir), "second", paths=["sys"])
+
+        (worktree / "sys" / "config.g").write_text("v3\n")
+        c3 = git_utils.backup_commit(str(backup_dir), "third", paths=["sys"])
+
+        return {
+            "backup": str(backup_dir),
+            "worktree": str(worktree),
+            "commits": [c1, c2, c3],
+        }
+
+    def test_delete_head_commit(self, delete_env):
+        """Deleting HEAD removes the most recent commit."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[2])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        hashes = [e["hash"] for e in log]
+        assert commits[2] not in hashes
+        assert commits[1] in hashes
+        assert commits[0] in hashes
+
+    def test_delete_middle_commit(self, delete_env):
+        """Deleting a non-HEAD commit rebases descendants."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[1])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        hashes = [e["hash"] for e in log]
+        assert commits[1] not in hashes
+        # Root commit should still exist
+        assert commits[0] in hashes
+        # Should have 2 commits remaining
+        assert len(log) == 2
+
+    def test_delete_only_commit_raises(self, tmp_path):
+        """Cannot delete the only backup commit."""
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("v1\n")
+
+        backup_dir = tmp_path / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        c = git_utils.backup_commit(str(backup_dir), "only", paths=["sys"])
+
+        with pytest.raises(RuntimeError, match="Cannot delete the only backup"):
+            git_utils.backup_delete(str(backup_dir), c)
+
+    def test_delete_root_with_descendants_raises(self, delete_env):
+        """Cannot delete the oldest backup while newer ones exist."""
+        commits = delete_env["commits"]
+        with pytest.raises(RuntimeError, match="Cannot delete the oldest backup"):
+            git_utils.backup_delete(delete_env["backup"], commits[0])
+
+    def test_delete_preserves_remaining_history(self, delete_env):
+        """After deleting HEAD, the remaining log messages are intact."""
+        commits = delete_env["commits"]
+        git_utils.backup_delete(delete_env["backup"], commits[2])
+
+        log = git_utils.backup_log(delete_env["backup"])
+        messages = [e["message"] for e in log]
+        assert "second" in messages
+        assert "first" in messages
+        assert "third" not in messages

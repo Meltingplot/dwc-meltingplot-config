@@ -138,6 +138,11 @@ export default {
       expandedPanels: []
     }
   },
+  watch: {
+    files() {
+      this.expandedPanels = []
+    }
+  },
   computed: {
     changedFiles() {
       return this.files.filter(f => f.status !== 'unchanged')

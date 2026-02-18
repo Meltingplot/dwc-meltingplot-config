@@ -128,21 +128,40 @@ def find_closest_branch(repo_path, version):
 # --- Backup repository operations ---
 
 
-def init_backup_repo(backup_path):
-    """Initialize the backup git repository if it doesn't exist."""
-    if os.path.isdir(os.path.join(backup_path, ".git")):
-        return
-    os.makedirs(backup_path, exist_ok=True)
-    _run(["init"], cwd=backup_path)
-    _run(["config", "user.email", "meltingplot-config@localhost"], cwd=backup_path)
-    _run(["config", "user.name", "MeltingplotConfig"], cwd=backup_path)
-    _run(["config", "commit.gpgsign", "false"], cwd=backup_path)
-    logger.info("Initialized backup repo at %s", backup_path)
+def init_backup_repo(backup_path, worktree=None):
+    """Initialize the backup git repository if it doesn't exist.
+
+    If *worktree* is given, ``core.worktree`` is configured so the repo
+    tracks files in-place at the given directory rather than inside
+    *backup_path*.  The worktree setting is always (re-)applied on an
+    existing repo so that it stays in sync after a daemon restart.
+    """
+    already_exists = os.path.isdir(os.path.join(backup_path, ".git"))
+    if not already_exists:
+        os.makedirs(backup_path, exist_ok=True)
+        _run(["init"], cwd=backup_path)
+        _run(["config", "user.email", "meltingplot-config@localhost"], cwd=backup_path)
+        _run(["config", "user.name", "MeltingplotConfig"], cwd=backup_path)
+        _run(["config", "commit.gpgsign", "false"], cwd=backup_path)
+        logger.info("Initialized backup repo at %s", backup_path)
+
+    # Always (re-)apply worktree so path changes between restarts are picked up.
+    if worktree:
+        _run(["config", "core.worktree", worktree], cwd=backup_path)
+        logger.info("Backup repo worktree set to %s", worktree)
 
 
-def backup_commit(backup_path, message):
-    """Stage all changes in the backup repo and commit."""
-    _run(["add", "-A"], cwd=backup_path)
+def backup_commit(backup_path, message, paths=None):
+    """Stage changes in the backup repo and commit.
+
+    If *paths* is given (a list of directory/file names relative to the
+    worktree root), only those paths are staged.  Otherwise all changes
+    are staged (``git add -A``).
+    """
+    if paths:
+        _run(["add", "-A", "--"] + list(paths), cwd=backup_path)
+    else:
+        _run(["add", "-A"], cwd=backup_path)
     # Check if there's anything to commit
     result = subprocess.run(
         [GIT_BIN, "diff", "--cached", "--quiet"],
@@ -156,6 +175,19 @@ def backup_commit(backup_path, message):
     commit_hash = _run(["rev-parse", "HEAD"], cwd=backup_path)
     logger.info("Backup commit: %s (%s)", commit_hash[:8], message)
     return commit_hash
+
+
+def backup_checkout(backup_path, commit_hash, paths=None):
+    """Checkout files from a backup commit into the worktree.
+
+    If *paths* is given (relative to worktree), only those paths are
+    restored.  Otherwise the full commit is checked out.
+    """
+    if paths:
+        _run(["checkout", commit_hash, "--"] + list(paths), cwd=backup_path)
+    else:
+        _run(["checkout", commit_hash, "--", "."], cwd=backup_path)
+    logger.info("Checked out backup %s", commit_hash[:8])
 
 
 def backup_log(backup_path, max_count=50):
@@ -228,3 +260,39 @@ def backup_archive(backup_path, commit_hash):
     if result.returncode != 0:
         raise RuntimeError(f"git archive failed: {result.stderr.decode().strip()}")
     return result.stdout
+
+
+def backup_delete(backup_path, commit_hash):
+    """Delete a specific backup commit from the history.
+
+    - If the commit is HEAD: ``git reset --hard HEAD~1``
+    - If the commit is in the middle: ``git rebase --onto <parent> <hash>``
+    - If the commit is the only one or the root with descendants: error.
+    """
+    head = _run(["rev-parse", "HEAD"], cwd=backup_path)
+
+    # Check if this commit has a parent.
+    try:
+        _run(["rev-parse", f"{commit_hash}^"], cwd=backup_path)
+        has_parent = True
+    except RuntimeError:
+        has_parent = False
+
+    is_head = head == commit_hash or head.startswith(commit_hash) or commit_hash.startswith(head)
+
+    if is_head:
+        if not has_parent:
+            raise RuntimeError("Cannot delete the only backup")
+        _run(["reset", "--hard", "HEAD~1"], cwd=backup_path)
+        logger.info("Deleted backup (HEAD reset): %s", commit_hash[:8])
+    else:
+        if not has_parent:
+            raise RuntimeError(
+                "Cannot delete the oldest backup while newer ones exist. "
+                "Delete newer backups first."
+            )
+        _run(
+            ["rebase", "--onto", f"{commit_hash}^", commit_hash, "-X", "theirs"],
+            cwd=backup_path,
+        )
+        logger.info("Deleted backup (rebased): %s", commit_hash[:8])

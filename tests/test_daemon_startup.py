@@ -259,6 +259,37 @@ class TestMainStartup:
         ep2.close.assert_called_once()
         cmd.close.assert_called_once()
 
+    def test_startup_resolve_path_unwraps_response_object(self):
+        """resolve_path returns a Response object — daemon must use .result."""
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        model = self._make_model()
+        cmd.get_object_model.return_value = model
+
+        # Simulate dsf-python's resolve_path returning a Response object
+        def fake_resolve(p):
+            path = f"/opt/dsf/sd/{p.split(':/', 1)[1]}"
+            return SimpleNamespace(result=path, success=True)
+
+        cmd.resolve_path.side_effect = fake_resolve
+
+        with (
+            patch.object(daemon, "CommandConnection", return_value=cmd),
+            patch.object(daemon, "ConfigManager") as MockManager,
+            patch.object(daemon, "register_endpoints", return_value=[]),
+            patch("time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            daemon.main()
+
+        call_kwargs = MockManager.call_args[1]
+        resolved = call_kwargs["resolved_dirs"]
+        assert resolved is not None
+        # Paths should be unwrapped strings, not Response objects
+        for printer_prefix, fs_path in resolved.items():
+            assert isinstance(fs_path, str), f"Expected string, got {type(fs_path)}"
+            assert fs_path.startswith("/opt/dsf/sd/")
+            assert fs_path.endswith("/")
+
     def test_startup_empty_dir_map_falls_back_to_defaults(self):
         """If build_directory_map returns {}, use DEFAULT_DIRECTORY_MAP for resolution."""
         daemon = _import_daemon()

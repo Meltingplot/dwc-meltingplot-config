@@ -101,6 +101,10 @@ const REFERENCE_RESPONSE = {
   files: ['sys/config.g', 'sys/homex.g', 'macros/print_start.g']
 }
 
+const DELETE_BACKUP_RESPONSE = {
+  deleted: 'abc123def456'
+}
+
 const SETTINGS_RESPONSE = {
   ok: true
 }
@@ -292,6 +296,13 @@ describe('API contract: /reference response', () => {
     assertHasKeys(REFERENCE_RESPONSE, ['files'])
     expect(Array.isArray(REFERENCE_RESPONSE.files)).toBe(true)
     REFERENCE_RESPONSE.files.forEach(f => expect(typeof f).toBe('string'))
+  })
+})
+
+describe('API contract: /deleteBackup response', () => {
+  it('has deleted field with commit hash', () => {
+    assertHasKeys(DELETE_BACKUP_RESPONSE, ['deleted'])
+    expect(typeof DELETE_BACKUP_RESPONSE.deleted).toBe('string')
   })
 })
 

@@ -99,6 +99,13 @@ describe('BackupHistory', () => {
       expect(wrapper.emitted('restore')).toBeTruthy()
       expect(wrapper.emitted('restore')[0]).toEqual([sampleBackups[0].hash])
     })
+
+    it('emits delete with correct hash', () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      wrapper.vm.$emit('delete', sampleBackups[0].hash)
+      expect(wrapper.emitted('delete')).toBeTruthy()
+      expect(wrapper.emitted('delete')[0]).toEqual([sampleBackups[0].hash])
+    })
   })
 
   describe('toggleExpand', () => {

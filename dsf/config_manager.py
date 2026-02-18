@@ -4,12 +4,13 @@ import difflib
 import logging
 import os
 import re
-import shutil
 from datetime import datetime, timezone
 
 from git_utils import (
     backup_archive,
+    backup_checkout,
     backup_commit,
+    backup_delete,
     backup_file_content,
     backup_files_at,
     backup_log,
@@ -30,8 +31,10 @@ PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
 REFERENCE_DIR = os.path.join(PLUGIN_DIR, "reference")
 BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
 
-# Directories excluded from backups (gcode files are large and user-specific).
-BACKUP_EXCLUDED_PREFIXES = ("gcodes/",)
+# Directories backed up via the worktree-based backup repo.
+# Only these top-level printer directories are tracked; everything else
+# (gcodes, firmware, www, menu) is excluded by not being staged.
+BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 
 # Default directory mapping (fallback when DSF object model is unavailable).
 # In production, the daemon reads model.directories and builds this dynamically.
@@ -64,7 +67,41 @@ class ConfigManager:
         self._dsf = dsf_command_connection
         self._dir_map = directory_map if directory_map is not None else DEFAULT_DIRECTORY_MAP
         self._resolved_dirs = resolved_dirs if resolved_dirs is not None else self.DEFAULT_RESOLVED_DIRS
-        init_backup_repo(BACKUP_DIR)
+        # Derive the git worktree root and the relative directory names that
+        # should be tracked in backups, using the resolved filesystem paths
+        # from the DSF object model.
+        self._worktree, self._backup_paths = self._compute_backup_worktree()
+        init_backup_repo(BACKUP_DIR, worktree=self._worktree)
+
+    def _compute_backup_worktree(self):
+        """Derive the git worktree root and relative backup paths.
+
+        Uses the resolved filesystem paths from the DSF object model to
+        find a common parent directory that can serve as the git worktree.
+        Only directories listed in ``BACKUP_INCLUDED_DIRS`` are considered.
+
+        Returns ``(worktree_root, [relative_dir_names])`` or ``(None, [])``
+        if the directories cannot be resolved.
+        """
+        fs_paths = []
+        for ref_prefix in BACKUP_INCLUDED_DIRS:
+            printer_path = self._dir_map.get(ref_prefix)
+            if not printer_path:
+                continue
+            fs_path = self._resolved_dirs.get(printer_path)
+            if fs_path:
+                fs_paths.append(fs_path.rstrip("/"))
+
+        if not fs_paths:
+            return None, []
+
+        # Use the parent of each directory so the common root is always a
+        # proper parent — e.g. for ["/sd/sys"] the root is "/sd" (not
+        # "/sd/sys" which would make the relative path ".").
+        parents = list({os.path.dirname(fp) for fp in fs_paths})
+        common = parents[0] if len(parents) == 1 else os.path.commonpath(parents)
+        rel_paths = [os.path.relpath(fp, common) for fp in fs_paths]
+        return common, rel_paths
 
     # --- File I/O via resolved filesystem paths ---
 
@@ -404,37 +441,37 @@ class ConfigManager:
     # --- Backups ---
 
     def _create_backup(self, message):
-        """Copy current printer config files into the backup repo and commit.
+        """Commit the current printer config state via the worktree.
 
-        Gcode files (under gcodes/) are excluded from backups because they are
-        large, user-specific, and not part of the printer configuration.
+        The backup repo's ``core.worktree`` points at the printer's SD-card
+        root (derived from the DSF object model at startup).  Only the
+        directories listed in ``BACKUP_INCLUDED_DIRS`` (sys/, macros/,
+        filaments/) are staged, so gcodes and other large directories are
+        never tracked.
         """
-        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+        if not self._worktree or not self._backup_paths:
             return
-        ref_files = list_files(REFERENCE_DIR)
-        for ref_path in ref_files:
-            if ref_path.startswith(BACKUP_EXCLUDED_PREFIXES):
-                continue
-            printer_path = self._ref_to_printer_path(ref_path)
-            if printer_path is None:
-                continue
-            content = self._read_printer_file(printer_path)
-            if content is not None:
-                dest = os.path.join(BACKUP_DIR, ref_path)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(content)
+        # Only stage directories that actually exist on the filesystem.
+        existing = [
+            p for p in self._backup_paths
+            if os.path.isdir(os.path.join(self._worktree, p))
+        ]
+        if not existing:
+            return
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        backup_commit(BACKUP_DIR, f"{message} \u2014 {now}")
+        backup_commit(BACKUP_DIR, f"{message} \u2014 {now}", paths=existing)
 
     def create_manual_backup(self, message=""):
         """Create a manual backup of the current printer config.
 
-        Returns a dict with the backup hash and message, or an error.
+        Backups are independent of the reference repository — they track
+        the printer's filesystem directly via the git worktree.
+
+        Returns a dict with the backup entry, or an error.
         """
-        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
-            return {"error": "Reference repository not cloned"}
+        if not self._worktree or not self._backup_paths:
+            return {"error": "Backup directories not configured"}
 
         label = message.strip() if message else "Manual backup"
         self._create_backup(label)
@@ -458,19 +495,22 @@ class ConfigManager:
         return backup_archive(BACKUP_DIR, commit_hash)
 
     def restore_backup(self, commit_hash):
-        """Restore printer config from a backup commit."""
+        """Restore printer config from a backup commit.
+
+        Creates a pre-restore backup first (safety net), then checks out
+        the requested commit's files directly into the worktree, and
+        finally records a post-restore backup.
+        """
         self._create_backup("Pre-restore backup")
         files = backup_files_at(BACKUP_DIR, commit_hash)
-        restored = []
-        for file_path in files:
-            printer_path = self._ref_to_printer_path(file_path)
-            if printer_path is None:
-                continue
-            content = backup_file_content(BACKUP_DIR, commit_hash, file_path)
-            self._write_printer_file(printer_path, content)
-            restored.append(file_path)
+        backup_checkout(BACKUP_DIR, commit_hash)
         self._create_backup(f"Restored from backup {commit_hash[:8]}")
-        return {"restored": restored}
+        return {"restored": files}
+
+    def delete_backup(self, commit_hash):
+        """Delete a specific backup commit from the history."""
+        backup_delete(BACKUP_DIR, commit_hash)
+        return {"deleted": commit_hash}
 
 
 # --- Hunk patching helpers ---

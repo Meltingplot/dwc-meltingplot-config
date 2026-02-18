@@ -333,7 +333,7 @@ describe('User flow: Backup and restore', () => {
     wrapper.destroy()
   })
 
-  it('download backup opens correct URL', async () => {
+  it('download backup fetches ZIP with .zip filename', async () => {
     backend.on('/status', { branches: [] })
 
     const wrapper = mount(MeltingplotConfig, {
@@ -343,12 +343,34 @@ describe('User flow: Backup and restore', () => {
     })
     await flush()
 
-    window.open = jest.fn()
-    wrapper.vm.downloadBackup('abc123')
-    expect(window.open).toHaveBeenCalledWith(
-      expect.stringContaining('/backupDownload?hash=abc123'),
-      '_blank'
+    const mockBlob = new Blob(['PK'], { type: 'application/zip' })
+    const origFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(mockBlob),
+    })
+    URL.createObjectURL = jest.fn().mockReturnValue('blob:fake')
+    URL.revokeObjectURL = jest.fn()
+
+    const clickSpy = jest.fn()
+    const origCreateElement = document.createElement.bind(document)
+    jest.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = origCreateElement(tag)
+      if (tag === 'a') {
+        el.click = clickSpy
+      }
+      return el
+    })
+
+    await wrapper.vm.downloadBackup('abc123')
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/backupDownload?hash=abc123')
     )
+    expect(clickSpy).toHaveBeenCalled()
+
+    document.createElement.mockRestore()
+    global.fetch = origFetch
 
     wrapper.destroy()
   })

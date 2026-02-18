@@ -326,7 +326,8 @@ class TestHandleSettings:
         manager = MagicMock()
 
         body = json.dumps({"referenceRepoUrl": "https://new.example.com/repo.git"})
-        resp = daemon.handle_settings(cmd, manager, body, {})
+        with patch.object(daemon, "save_settings_to_disk"):
+            resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
         cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "referenceRepoUrl", "https://new.example.com/repo.git")
 
@@ -336,7 +337,8 @@ class TestHandleSettings:
         manager = MagicMock()
 
         body = json.dumps({"firmwareBranchOverride": "custom"})
-        resp = daemon.handle_settings(cmd, manager, body, {})
+        with patch.object(daemon, "save_settings_to_disk"):
+            resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
         cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "firmwareBranchOverride", "custom")
 
@@ -365,6 +367,32 @@ class TestHandleSettings:
         resp = daemon.handle_settings(cmd, manager, body, {})
         assert resp["status"] == 200
         cmd.set_plugin_data.assert_not_called()
+
+    def test_settings_persists_to_disk(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        body = json.dumps({
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "firmwareBranchOverride": "3.5",
+        })
+        with patch.object(daemon, "save_settings_to_disk") as mock_save:
+            daemon.handle_settings(cmd, manager, body, {})
+        mock_save.assert_called_once_with({
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "firmwareBranchOverride": "3.5",
+        })
+
+    def test_settings_does_not_persist_when_no_known_fields(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        body = json.dumps({"unknownField": "value"})
+        with patch.object(daemon, "save_settings_to_disk") as mock_save:
+            daemon.handle_settings(cmd, manager, body, {})
+        mock_save.assert_not_called()
 
 
 # --- handle_restore edge cases ---
@@ -600,3 +628,154 @@ class TestBuildDirectoryMap:
         assert "macros/" in result
         assert "firmware/" in result
         assert len(result) == 3
+
+
+# --- Persistent settings ---
+
+
+class TestLoadSettingsFromDisk:
+    def test_loads_valid_json(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({
+            "referenceRepoUrl": "https://example.com/repo.git",
+            "activeBranch": "3.5",
+        }))
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            result = daemon.load_settings_from_disk()
+        assert result["referenceRepoUrl"] == "https://example.com/repo.git"
+        assert result["activeBranch"] == "3.5"
+
+    def test_returns_empty_dict_when_file_missing(self, tmp_path):
+        daemon = _import_daemon()
+        with patch.object(daemon, "SETTINGS_FILE", str(tmp_path / "missing.json")):
+            result = daemon.load_settings_from_disk()
+        assert result == {}
+
+    def test_returns_empty_dict_on_corrupt_json(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("not valid json{")
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            result = daemon.load_settings_from_disk()
+        assert result == {}
+
+    def test_filters_out_unknown_keys(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({
+            "referenceRepoUrl": "url",
+            "badKey": "should be filtered",
+        }))
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            result = daemon.load_settings_from_disk()
+        assert "referenceRepoUrl" in result
+        assert "badKey" not in result
+
+    def test_returns_empty_dict_when_not_a_dict(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(["not", "a", "dict"]))
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            result = daemon.load_settings_from_disk()
+        assert result == {}
+
+
+class TestSaveSettingsToDisk:
+    def test_saves_persisted_keys(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            daemon.save_settings_to_disk({
+                "referenceRepoUrl": "https://example.com/repo.git",
+                "firmwareBranchOverride": "custom",
+            })
+        data = json.loads(settings_file.read_text())
+        assert data["referenceRepoUrl"] == "https://example.com/repo.git"
+        assert data["firmwareBranchOverride"] == "custom"
+
+    def test_merges_with_existing_data(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({
+            "referenceRepoUrl": "https://old.example.com/repo.git",
+            "activeBranch": "3.5",
+        }))
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            daemon.save_settings_to_disk({"activeBranch": "3.6"})
+        data = json.loads(settings_file.read_text())
+        assert data["referenceRepoUrl"] == "https://old.example.com/repo.git"
+        assert data["activeBranch"] == "3.6"
+
+    def test_ignores_unknown_keys(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "settings.json"
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            daemon.save_settings_to_disk({
+                "referenceRepoUrl": "url",
+                "unknownKey": "should not appear",
+            })
+        data = json.loads(settings_file.read_text())
+        assert "referenceRepoUrl" in data
+        assert "unknownKey" not in data
+
+    def test_creates_parent_directories(self, tmp_path):
+        daemon = _import_daemon()
+        settings_file = tmp_path / "subdir" / "settings.json"
+        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+            daemon.save_settings_to_disk({"referenceRepoUrl": "url"})
+        assert settings_file.exists()
+
+    def test_handles_write_failure_gracefully(self, tmp_path):
+        daemon = _import_daemon()
+        # Use a path that cannot be written (read-only dir)
+        with patch.object(daemon, "SETTINGS_FILE", "/proc/nonexistent/settings.json"):
+            # Should not raise
+            daemon.save_settings_to_disk({"referenceRepoUrl": "url"})
+
+
+class TestHandleSyncPersistence:
+    def test_sync_persists_to_disk(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "https://example.com/repo.git",
+                "detectedFirmwareVersion": "3.5.1",
+                "firmwareBranchOverride": "",
+            })}
+        )
+        manager = MagicMock()
+        manager.sync.return_value = {
+            "activeBranch": "3.5",
+            "exact": True,
+            "warning": None,
+            "branches": ["main", "3.5"],
+        }
+
+        with patch.object(daemon, "save_settings_to_disk") as mock_save:
+            daemon.handle_sync(cmd, manager, "", {})
+
+        mock_save.assert_called_once()
+        saved = mock_save.call_args[0][0]
+        assert saved["activeBranch"] == "3.5"
+        assert saved["status"] == "up_to_date"
+        assert "lastSyncTimestamp" in saved
+
+    def test_sync_error_does_not_persist(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "",
+                "detectedFirmwareVersion": "",
+                "firmwareBranchOverride": "",
+            })}
+        )
+        manager = MagicMock()
+        manager.sync.return_value = {"error": "No reference repository URL configured"}
+
+        with patch.object(daemon, "save_settings_to_disk") as mock_save:
+            daemon.handle_sync(cmd, manager, "", {})
+
+        mock_save.assert_not_called()

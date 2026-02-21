@@ -255,6 +255,12 @@ class TestDiffAll:
 
         assert len(result) == 1
         assert result[0]["status"] == "missing"
+        # Missing files now include summary hunks (index + header, no lines)
+        assert len(result[0]["hunks"]) > 0
+        for hunk in result[0]["hunks"]:
+            assert "index" in hunk
+            assert "header" in hunk
+            assert "lines" not in hunk
 
     def test_diff_all_modified_file(self, manager, printer_fs, tmp_path):
         git_dir = tmp_path / ".git"
@@ -328,8 +334,30 @@ class TestDiffFile:
             result = manager.diff_file("sys/config.g")
 
         assert result["status"] == "missing"
-        assert result["hunks"] == []
-        assert result["unifiedDiff"] == ""
+        # New files should show the full content as additions
+        assert len(result["hunks"]) > 0
+        assert result["unifiedDiff"] != ""
+        # All lines should be additions (prefixed with +)
+        for hunk in result["hunks"]:
+            assert "lines" in hunk
+            for line in hunk["lines"]:
+                assert line.startswith("+"), f"Expected all lines to be additions, got: {line}"
+
+    def test_diff_file_missing_multiline(self, manager, tmp_path):
+        """Missing file with multiple lines shows all content as additions."""
+        sys_dir = tmp_path / "sys"
+        sys_dir.mkdir()
+        (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\nM906 X800 Y800\n", encoding="utf-8")
+
+        with patch("config_manager.REFERENCE_DIR", str(tmp_path)):
+            result = manager.diff_file("sys/config.g")
+
+        assert result["status"] == "missing"
+        assert len(result["hunks"]) > 0
+        # Unified diff should contain all reference lines
+        assert "G28" in result["unifiedDiff"]
+        assert "M584" in result["unifiedDiff"]
+        assert "M906" in result["unifiedDiff"]
 
     def test_diff_file_unchanged(self, manager, printer_fs, tmp_path):
         sys_dir = tmp_path / "sys"

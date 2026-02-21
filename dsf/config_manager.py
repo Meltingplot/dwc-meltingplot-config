@@ -27,10 +27,8 @@ from git_utils import (
 
 logger = logging.getLogger("MeltingplotConfig")
 
-PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
-
 # Persistent data directory — lives on the SD card so it survives plugin
-# upgrades (DSF wipes PLUGIN_DIR during upgrade/reinstall).
+# upgrades (DSF wipes the plugin directory during upgrade/reinstall).
 # Placed directly under /opt/dsf/sd/ (not under sys/) to avoid being
 # visible in the DWC file browser.
 DATA_DIR = "/opt/dsf/sd/MeltingplotConfig"

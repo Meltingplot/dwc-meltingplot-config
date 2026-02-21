@@ -36,7 +36,7 @@ try:
 except ImportError:
     pass  # dsf not installed (e.g. test environment)
 
-from config_manager import ConfigManager, DATA_DIR, PLUGIN_DIR
+from config_manager import ConfigManager, DATA_DIR
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,12 +50,9 @@ API_NAMESPACE = "MeltingplotConfig"
 
 # --- Persistent settings (survive plugin upgrade/reinstall) ---
 
-# Settings file lives in DATA_DIR (on the SD card), NOT in PLUGIN_DIR,
-# because DSF wipes PLUGIN_DIR during plugin upgrade/reinstall.
+# Settings file lives in DATA_DIR (on the SD card), not in the plugin
+# directory, because DSF wipes plugin files during upgrade/reinstall.
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
-
-# Legacy location — settings were previously stored inside the plugin dir.
-_LEGACY_SETTINGS_FILE = os.path.join(PLUGIN_DIR, "settings.json")
 
 # Plugin data keys that are persisted to disk.  detectedFirmwareVersion is
 # excluded because it is re-detected from hardware at every startup.
@@ -83,18 +80,9 @@ def _load_settings_file(path):
 def load_settings_from_disk():
     """Load persisted plugin settings from disk.
 
-    Checks the primary location (DATA_DIR) first.  If empty, falls back to
-    the legacy location (PLUGIN_DIR) so that settings from older installs
-    are automatically migrated on the next save.
-
     Returns a dict of key-value pairs, or {} if no file is found.
     """
-    result = _load_settings_file(SETTINGS_FILE)
-    if result:
-        return result
-    # Fallback: try the legacy location (pre-upgrade installs stored
-    # settings inside PLUGIN_DIR which gets wiped on upgrade).
-    return _load_settings_file(_LEGACY_SETTINGS_FILE)
+    return _load_settings_file(SETTINGS_FILE)
 
 
 def save_settings_to_disk(updates):
@@ -484,46 +472,11 @@ def register_endpoints(cmd, manager):
     return registered
 
 
-def _migrate_legacy_data():
-    """Migrate data from the old plugin directory to the persistent location.
-
-    Before this fix, reference repos, backups, and settings lived inside
-    PLUGIN_DIR which DSF wipes on upgrade.  If data still exists at the
-    old location (e.g. first run after upgrading from an old version that
-    hasn't been wiped yet), move it to DATA_DIR.
-    """
-    import shutil
-    from config_manager import REFERENCE_DIR, BACKUP_DIR
-
-    old_ref = os.path.join(PLUGIN_DIR, "reference")
-    old_backup = os.path.join(PLUGIN_DIR, "backups")
-    old_settings = _LEGACY_SETTINGS_FILE
-
-    for old_path, new_path, label in [
-        (old_ref, REFERENCE_DIR, "reference repo"),
-        (old_backup, BACKUP_DIR, "backups"),
-        (old_settings, SETTINGS_FILE, "settings"),
-    ]:
-        if not os.path.exists(old_path):
-            continue
-        if os.path.exists(new_path):
-            continue
-        try:
-            os.makedirs(os.path.dirname(new_path), exist_ok=True)
-            shutil.move(old_path, new_path)
-            logger.info("Migrated %s: %s -> %s", label, old_path, new_path)
-        except (IOError, OSError) as exc:
-            logger.warning("Failed to migrate %s: %s", label, exc)
-
-
 def main():
     logger.info("Meltingplot Config daemon starting...")
 
     # Ensure persistent data directory exists (survives plugin upgrades)
     os.makedirs(DATA_DIR, exist_ok=True)
-
-    # Migrate data from old plugin-dir location if present
-    _migrate_legacy_data()
 
     cmd = CommandConnection()
     cmd.connect()

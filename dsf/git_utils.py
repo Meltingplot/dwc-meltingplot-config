@@ -182,12 +182,16 @@ def init_backup_repo(backup_path, worktree=None):
         logger.debug("Backup repo worktree set to %s", worktree)
 
 
-def backup_commit(backup_path, message, paths=None):
+def backup_commit(backup_path, message, paths=None, force=False):
     """Stage changes in the backup repo and commit.
 
     If *paths* is given (a list of directory/file names relative to the
     worktree root), only those paths are staged.  Otherwise all changes
     are staged (``git add -A``).
+
+    If *force* is True, a commit is created even when there are no
+    staged changes (``--allow-empty``).  This is used for full backups
+    which should always produce a commit.
     """
     cwd, git_dir = _backup_cwd(backup_path)
     if paths:
@@ -204,10 +208,13 @@ def backup_commit(backup_path, message, paths=None):
         cwd=cwd,
         capture_output=True,
     )
-    if result.returncode == 0:
+    if result.returncode == 0 and not force:
         logger.debug("No changes to commit in backup repo")
         return None
-    output = _run(["commit", "-m", message], cwd=cwd, git_dir=git_dir)
+    commit_cmd = ["commit", "-m", message]
+    if result.returncode == 0:
+        commit_cmd.append("--allow-empty")
+    _run(commit_cmd, cwd=cwd, git_dir=git_dir)
     commit_hash = _run(["rev-parse", "HEAD"], cwd=cwd, git_dir=git_dir)
     # Strip the timestamp suffix (after " — ") for cleaner console output;
     # the full message is preserved in the git commit itself.
@@ -233,7 +240,11 @@ def backup_checkout(backup_path, commit_hash, paths=None):
 def backup_log(backup_path, max_count=50):
     """Get the backup commit log.
 
-    Returns list of dicts with hash, message, timestamp, filesChanged.
+    Returns list of dicts with hash, message, timestamp, filesChanged,
+    and isFullBackup.  Full backups (marked with ``[full]`` in the
+    commit message) report the total file count instead of only the
+    changed-file count, and the ``[full]`` tag is stripped from the
+    returned message.
     """
     if not os.path.isdir(os.path.join(backup_path, ".git")):
         return []
@@ -257,21 +268,36 @@ def backup_log(backup_path, max_count=50):
         if len(parts) < 4:
             continue
         full_hash, message, timestamp, short_hash = parts
-        # Count files changed in this commit
-        try:
-            stat = _run(
-                ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full_hash],
-                cwd=backup_path,
-            )
-            files_changed = len([f for f in stat.splitlines() if f.strip()])
-        except RuntimeError:
-            files_changed = 0
+        is_full = "[full]" in message
+        if is_full:
+            # Strip [full] tag from displayed message
+            message = message.replace(" [full]", "").replace("[full] ", "").replace("[full]", "")
+            # Count total files in the snapshot (not just changed)
+            try:
+                tree = _run(
+                    ["ls-tree", "-r", "--name-only", full_hash],
+                    cwd=backup_path,
+                )
+                files_changed = len([f for f in tree.splitlines() if f.strip()])
+            except RuntimeError:
+                files_changed = 0
+        else:
+            # Count files changed in this commit
+            try:
+                stat = _run(
+                    ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full_hash],
+                    cwd=backup_path,
+                )
+                files_changed = len([f for f in stat.splitlines() if f.strip()])
+            except RuntimeError:
+                files_changed = 0
         entries.append(
             {
                 "hash": full_hash,
                 "message": message,
                 "timestamp": timestamp,
                 "filesChanged": files_changed,
+                "isFullBackup": is_full,
             }
         )
     return entries

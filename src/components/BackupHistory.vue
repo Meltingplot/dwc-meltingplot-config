@@ -65,15 +65,15 @@
               <v-progress-circular indeterminate size="24" />
             </div>
 
-            <div v-else-if="backup.changedFiles && backup.changedFiles.length > 0" class="backup-detail-panel">
+            <div v-else-if="displayFiles(backup).length > 0" class="backup-detail-panel">
               <v-row no-gutters>
                 <!-- File tree (left) -->
                 <v-col cols="3" class="backup-tree-col">
                   <div class="backup-tree-header caption font-weight-medium pa-2">
-                    Changed Files
+                    {{ backup.isFullBackup ? 'Files' : 'Changed Files' }}
                   </div>
                   <v-treeview
-                    :items="buildFileTree(backup.changedFiles)"
+                    :items="buildFileTree(displayFiles(backup))"
                     item-key="id"
                     dense
                     open-all
@@ -170,8 +170,8 @@
               </v-row>
             </div>
 
-            <div v-else-if="backup.changedFiles && backup.changedFiles.length === 0" class="text-center pa-4 caption grey--text">
-              No files changed in this backup.
+            <div v-else-if="displayFiles(backup).length === 0" class="text-center pa-4 caption grey--text">
+              No files in this backup.
             </div>
           </div>
         </v-expand-transition>
@@ -247,6 +247,13 @@ export default {
       }
     },
 
+    displayFiles(backup) {
+      if (backup.isFullBackup) {
+        return backup.files || []
+      }
+      return backup.changedFiles || []
+    },
+
     buildFileTree(files) {
       if (!files || files.length === 0) return []
 
@@ -298,7 +305,8 @@ export default {
 
       const selectedId = activeIds[0]
       // Only fetch diff for leaf nodes (actual files, not folders)
-      if (!backup.changedFiles || !backup.changedFiles.includes(selectedId)) {
+      const fileList = this.displayFiles(backup)
+      if (!fileList.includes(selectedId)) {
         return
       }
 

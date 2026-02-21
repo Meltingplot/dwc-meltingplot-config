@@ -486,7 +486,7 @@ class ConfigManager:
 
     # --- Backups ---
 
-    def _create_backup(self, message):
+    def _create_backup(self, message, force=False):
         """Commit the current printer config state via the worktree.
 
         The backup repo's ``core.worktree`` points at the printer's SD-card
@@ -494,6 +494,9 @@ class ConfigManager:
         directories listed in ``BACKUP_INCLUDED_DIRS`` (sys/, macros/,
         filaments/) are staged, so gcodes and other large directories are
         never tracked.
+
+        If *force* is True, a commit is created even when nothing has
+        changed (used for full/manual backups).
         """
         if not self._worktree or not self._backup_paths:
             return
@@ -506,13 +509,15 @@ class ConfigManager:
             return
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        backup_commit(BACKUP_DIR, f"{message} \u2014 {now}", paths=existing)
+        backup_commit(BACKUP_DIR, f"{message} \u2014 {now}", paths=existing,
+                      force=force)
 
     def create_manual_backup(self, message=""):
-        """Create a manual backup of the current printer config.
+        """Create a manual (full) backup of the current printer config.
 
-        Backups are independent of the reference repository — they track
-        the printer's filesystem directly via the git worktree.
+        Manual backups are always full backups — they are created even
+        when nothing has changed and are tagged with ``[full]`` so the
+        history shows the complete file list instead of only changed files.
 
         Returns a dict with the backup entry, or an error.
         """
@@ -520,7 +525,7 @@ class ConfigManager:
             return {"error": "Backup directories not configured"}
 
         label = message.strip() if message else "Manual backup"
-        self._create_backup(label)
+        self._create_backup(f"{label} [full]", force=True)
 
         # Return the latest backup entry
         backups = self.get_backups(max_count=1)

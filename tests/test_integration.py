@@ -490,3 +490,153 @@ class TestSpecialCharacterFilePaths:
 
         result = env["manager"].apply_hunks("sys/my config.g", [0])
         assert 0 in result["applied"]
+
+
+# --- Protected override files ---
+
+
+@pytest.fixture
+def protected_file_repo(tmp_path):
+    """Create a reference repo containing protected override files."""
+    bare = tmp_path / "protected_bare.git"
+    bare.mkdir()
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "receive.denyCurrentBranch", "ignore"],
+        cwd=str(bare), check=True, capture_output=True,
+    )
+
+    clone_dir = tmp_path / "protected_setup"
+    subprocess.run(["git", "clone", str(bare), str(clone_dir)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    sys_dir = clone_dir / "sys"
+    sys_dir.mkdir()
+    (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\n")
+
+    mp_dir = sys_dir / "meltingplot"
+    mp_dir.mkdir()
+    (mp_dir / "dsf-config-override.g").write_text("M906 X900\n")
+    # machine-override is a file without extension
+    (mp_dir / "machine-override").write_text("M208 X300 Y300 Z400\n")
+
+    subprocess.run(["git", "add", "-A"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "config with overrides"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    return str(bare)
+
+
+@pytest.fixture
+def protected_env(tmp_path, protected_file_repo):
+    """Integration env with protected override files."""
+    printer_fs = tmp_path / "printer_sd"
+    printer_fs.mkdir()
+    sys_dir = printer_fs / "sys"
+    sys_dir.mkdir()
+    (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\n")
+
+    mp_dir = sys_dir / "meltingplot"
+    mp_dir.mkdir()
+    (mp_dir / "dsf-config-override.g").write_text("M906 X800 ORIGINAL\n")
+    (mp_dir / "machine-override").write_text("M208 X200 Y200 Z300 ORIGINAL\n")
+
+    ref_dir = str(tmp_path / "reference")
+    backup_dir = str(tmp_path / "backups")
+
+    resolved = {
+        "0:/sys/": str(printer_fs / "sys") + "/",
+    }
+
+    with (
+        patch("config_manager.REFERENCE_DIR", ref_dir),
+        patch("config_manager.BACKUP_DIR", backup_dir),
+    ):
+        manager = ConfigManager(
+            dsf_command_connection=MagicMock(),
+            resolved_dirs=resolved,
+        )
+        yield {
+            "manager": manager,
+            "repo_url": protected_file_repo,
+            "printer_fs": printer_fs,
+        }
+
+
+class TestProtectedFiles:
+    """Integration tests for protected override files."""
+
+    def test_diff_all_marks_protected_files(self, protected_env):
+        """Protected files should appear with status 'protected' in diff_all."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        diff = env["manager"].diff_all()
+        statuses = {f["file"]: f["status"] for f in diff}
+
+        assert statuses["sys/config.g"] == "unchanged"
+        assert statuses["sys/meltingplot/dsf-config-override.g"] == "protected"
+        assert statuses["sys/meltingplot/machine-override"] == "protected"
+
+    def test_diff_file_returns_protected_status(self, protected_env):
+        """diff_file on a protected file should return 'protected' status."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        detail = env["manager"].diff_file("sys/meltingplot/machine-override")
+        assert detail["status"] == "protected"
+        assert detail["hunks"] == []
+        assert detail["unifiedDiff"] == ""
+
+    def test_apply_all_skips_protected_files(self, protected_env):
+        """apply_all should skip protected files and report them as skipped."""
+        env = protected_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_all()
+        assert "error" not in result
+
+        # Protected files should be in skipped, not applied
+        assert "sys/meltingplot/dsf-config-override.g" in result["skipped"]
+        assert "sys/meltingplot/machine-override" in result["skipped"]
+
+        # Protected files should retain their original content
+        override_content = (pfs / "sys" / "meltingplot" / "dsf-config-override.g").read_text()
+        assert "ORIGINAL" in override_content
+
+        machine_content = (pfs / "sys" / "meltingplot" / "machine-override").read_text()
+        assert "ORIGINAL" in machine_content
+
+    def test_apply_file_rejects_protected_file(self, protected_env):
+        """apply_file on a protected file should return an error."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("sys/meltingplot/machine-override")
+        assert "error" in result
+        assert "Protected" in result["error"]
+
+    def test_apply_hunks_rejects_protected_file(self, protected_env):
+        """apply_hunks on a protected file should return an error."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_hunks("sys/meltingplot/dsf-config-override.g", [0])
+        assert "error" in result
+        assert "Protected" in result["error"]
+
+    def test_normal_file_still_applies(self, protected_env):
+        """Non-protected files should still be applied normally."""
+        env = protected_env
+        pfs = env["printer_fs"]
+        # Modify the normal config so there's a diff
+        (pfs / "sys" / "config.g").write_text("G28\nM584 X0 Y1 OLD\n")
+
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("sys/config.g")
+        assert "sys/config.g" in result["applied"]

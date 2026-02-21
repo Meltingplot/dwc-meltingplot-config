@@ -252,6 +252,11 @@ export default {
         if (status.branches) {
           this.availableBranches = status.branches
         }
+        // Auto-load diff when a reference repo is configured so changes
+        // are visible immediately after a restart without a manual sync.
+        if (status.referenceRepoUrl) {
+          this.loadDiff()
+        }
       } catch {
         // Status endpoint may not be available yet
       }

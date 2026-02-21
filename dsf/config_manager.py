@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from git_utils import (
     backup_archive,
+    backup_changed_files,
     backup_checkout,
     backup_commit,
     backup_delete,
@@ -547,6 +548,51 @@ class ConfigManager:
     def get_backup_files(self, commit_hash):
         """List files in a specific backup."""
         return backup_files_at(BACKUP_DIR, commit_hash)
+
+    def get_backup_changed_files(self, commit_hash):
+        """List files changed in a specific backup commit."""
+        return backup_changed_files(BACKUP_DIR, commit_hash)
+
+    def get_backup_file_diff(self, commit_hash, file_path):
+        """Get diff details for a specific file in a backup commit.
+
+        Compares the file at *commit_hash* against its parent commit.
+        Returns a dict with ``file``, ``status``, and ``hunks`` (full
+        detail hunks with lines and summary).
+        """
+        new_content = None
+        old_content = None
+
+        try:
+            new_content = backup_file_content(BACKUP_DIR, commit_hash, file_path)
+        except RuntimeError:
+            pass
+
+        try:
+            old_content = backup_file_content(
+                BACKUP_DIR, f"{commit_hash}^", file_path
+            )
+        except RuntimeError:
+            pass
+
+        if new_content is None and old_content is None:
+            return {"file": file_path, "status": "unknown", "hunks": []}
+
+        if old_content is None:
+            # File was added in this commit
+            hunks = self._compute_hunks(file_path, "", new_content)
+            return {"file": file_path, "status": "added", "hunks": hunks}
+
+        if new_content is None:
+            # File was deleted in this commit
+            hunks = self._compute_hunks(file_path, old_content, "")
+            return {"file": file_path, "status": "deleted", "hunks": hunks}
+
+        if old_content == new_content:
+            return {"file": file_path, "status": "unchanged", "hunks": []}
+
+        hunks = self._compute_hunks(file_path, old_content, new_content)
+        return {"file": file_path, "status": "modified", "hunks": hunks}
 
     def get_backup_download(self, commit_hash):
         """Get a ZIP archive of a backup. Returns bytes."""

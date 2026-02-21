@@ -324,7 +324,12 @@ def handle_backup(_cmd, manager, _body, queries):
     if not commit_hash:
         return error_response("Commit hash required (use ?hash= query param)")
     files = manager.get_backup_files(commit_hash)
-    return json_response({"hash": commit_hash, "files": files})
+    changed_files = manager.get_backup_changed_files(commit_hash)
+    return json_response({
+        "hash": commit_hash,
+        "files": files,
+        "changedFiles": changed_files,
+    })
 
 
 def handle_backup_download(_cmd, manager, _body, queries):
@@ -347,6 +352,18 @@ def handle_backup_download(_cmd, manager, _body, queries):
         }
     except Exception as exc:
         return error_response(f"Download failed: {exc}", status=500)
+
+
+def handle_backup_file_diff(_cmd, manager, _body, queries):
+    """GET /machine/MeltingplotConfig/backupFileDiff?hash=<hash>&file=<path>"""
+    commit_hash = queries.get("hash", "")
+    if not commit_hash:
+        return error_response("Commit hash required (use ?hash= query param)")
+    file_param = queries.get("file", "")
+    if not file_param:
+        return error_response("File path required (use ?file= query param)")
+    result = manager.get_backup_file_diff(commit_hash, unquote(file_param))
+    return json_response(result)
 
 
 def handle_restore(_cmd, manager, _body, queries):
@@ -409,6 +426,7 @@ ENDPOINTS = {
     ("POST", "applyHunks"): handle_apply_hunks,
     ("GET", "backup"): handle_backup,
     ("GET", "backupDownload"): handle_backup_download,
+    ("GET", "backupFileDiff"): handle_backup_file_diff,
     ("POST", "restore"): handle_restore,
     ("POST", "deleteBackup"): handle_delete_backup,
     ("POST", "settings"): handle_settings,

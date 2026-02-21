@@ -212,13 +212,15 @@ class TestHandlers:
         daemon = _import_daemon()
         cmd = MagicMock()
         manager = MagicMock()
-        manager.get_backup_files.return_value = ["sys/config.g"]
+        manager.get_backup_files.return_value = ["sys/config.g", "sys/homex.g"]
+        manager.get_backup_changed_files.return_value = ["sys/config.g"]
 
         resp = daemon.handle_backup(cmd, manager, "", {"hash": "abc123"})
         assert resp["status"] == 200
         body = json.loads(resp["body"])
         assert body["hash"] == "abc123"
         assert "sys/config.g" in body["files"]
+        assert body["changedFiles"] == ["sys/config.g"]
 
     def test_backup_detail_missing_hash(self):
         daemon = _import_daemon()
@@ -302,6 +304,40 @@ class TestHandlers:
         resp = daemon.handle_manual_backup(cmd, manager, "", {})
         assert resp["status"] == 400
 
+    def test_backup_file_diff(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_diff.return_value = {
+            "file": "sys/config.g",
+            "status": "modified",
+            "hunks": [{"index": 0, "header": "@@ -1,3 +1,3 @@", "lines": [" G28", "-old", "+new"], "summary": "Lines 1-3"}],
+        }
+
+        resp = daemon.handle_backup_file_diff(cmd, manager, "", {"hash": "abc123", "file": "sys/config.g"})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert body["file"] == "sys/config.g"
+        assert body["status"] == "modified"
+        assert len(body["hunks"]) == 1
+        manager.get_backup_file_diff.assert_called_once_with("abc123", "sys/config.g")
+
+    def test_backup_file_diff_missing_hash(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        resp = daemon.handle_backup_file_diff(cmd, manager, "", {"file": "sys/config.g"})
+        assert resp["status"] == 400
+
+    def test_backup_file_diff_missing_file(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+
+        resp = daemon.handle_backup_file_diff(cmd, manager, "", {"hash": "abc123"})
+        assert resp["status"] == 400
+
 
 class TestEndpointRegistry:
     def test_endpoints_registered(self):
@@ -319,6 +355,7 @@ class TestEndpointRegistry:
         assert ("POST", "applyHunks") in endpoints
         assert ("GET", "backup") in endpoints
         assert ("GET", "backupDownload") in endpoints
+        assert ("GET", "backupFileDiff") in endpoints
         assert ("POST", "restore") in endpoints
         assert ("POST", "settings") in endpoints
 

@@ -182,6 +182,44 @@ class TestBackupRepo:
         # ZIP files start with PK
         assert archive_bytes[:2] == b"PK"
 
+    def test_changed_files_at_commit(self, backup_repo):
+        sys_dir = os.path.join(backup_repo, "sys")
+        os.makedirs(sys_dir, exist_ok=True)
+        with open(os.path.join(sys_dir, "config.g"), "w") as f:
+            f.write("G28\n")
+        commit1 = git_utils.backup_commit(backup_repo, "first")
+        # Root commit: all files are "changed" (added)
+        changed = git_utils.backup_changed_files(backup_repo, commit1)
+        assert "sys/config.g" in changed
+
+        # Modify a file and add another
+        with open(os.path.join(sys_dir, "config.g"), "w") as f:
+            f.write("G28\nM906 X800\n")
+        with open(os.path.join(sys_dir, "homex.g"), "w") as f:
+            f.write("G1 X0\n")
+        commit2 = git_utils.backup_commit(backup_repo, "second")
+        changed2 = git_utils.backup_changed_files(backup_repo, commit2)
+        assert "sys/config.g" in changed2
+        assert "sys/homex.g" in changed2
+
+    def test_changed_files_only_modified(self, backup_repo):
+        """Only files changed in the specific commit are returned."""
+        sys_dir = os.path.join(backup_repo, "sys")
+        os.makedirs(sys_dir, exist_ok=True)
+        with open(os.path.join(sys_dir, "config.g"), "w") as f:
+            f.write("G28\n")
+        with open(os.path.join(sys_dir, "homex.g"), "w") as f:
+            f.write("G1 X0\n")
+        git_utils.backup_commit(backup_repo, "initial")
+
+        # Only modify config.g
+        with open(os.path.join(sys_dir, "config.g"), "w") as f:
+            f.write("G28\nM906 X800\n")
+        commit2 = git_utils.backup_commit(backup_repo, "update config only")
+        changed = git_utils.backup_changed_files(backup_repo, commit2)
+        assert "sys/config.g" in changed
+        assert "sys/homex.g" not in changed
+
     def test_empty_log(self, tmp_path):
         empty = str(tmp_path / "nonexistent")
         assert git_utils.backup_log(empty) == []
@@ -248,6 +286,26 @@ class TestBackupRepoWorktree:
             worktree_env["backup"], commit, "sys/config.g"
         )
         assert "M906 X800" in content
+
+    def test_changed_files_with_worktree(self, worktree_env):
+        """backup_changed_files works with separate worktree."""
+        commit = git_utils.backup_commit(
+            worktree_env["backup"], "initial", paths=["sys", "macros"]
+        )
+        changed = git_utils.backup_changed_files(worktree_env["backup"], commit)
+        assert "sys/config.g" in changed
+        assert "macros/start.g" in changed
+
+        # Modify only one file
+        wt = worktree_env["worktree"]
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("G28\nM906 X800\n")
+        commit2 = git_utils.backup_commit(
+            worktree_env["backup"], "update sys", paths=["sys", "macros"]
+        )
+        changed2 = git_utils.backup_changed_files(worktree_env["backup"], commit2)
+        assert "sys/config.g" in changed2
+        assert "macros/start.g" not in changed2
 
     def test_init_idempotent_updates_worktree(self, worktree_env):
         """Re-init on existing repo updates core.worktree."""

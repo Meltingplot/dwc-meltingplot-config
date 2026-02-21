@@ -281,6 +281,20 @@ def backup_files_at(backup_path, commit_hash):
     return [f for f in output.splitlines() if f.strip()]
 
 
+def backup_changed_files(backup_path, commit_hash):
+    """List files changed in a specific backup commit.
+
+    Uses ``git diff-tree --root`` so the root commit (no parent) reports
+    all its files as newly added.
+    """
+    cwd, git_dir = _backup_cwd(backup_path)
+    output = _run(
+        ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit_hash],
+        cwd=cwd, git_dir=git_dir,
+    )
+    return [f for f in output.splitlines() if f.strip()]
+
+
 def backup_file_content(backup_path, commit_hash, file_path):
     """Read the content of a file at a specific backup commit."""
     return _run(["show", f"{commit_hash}:{file_path}"], cwd=backup_path)

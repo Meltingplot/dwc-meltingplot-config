@@ -90,7 +90,21 @@ const BACKUPS_RESPONSE = {
 
 const BACKUP_DETAIL_RESPONSE = {
   hash: 'abc123def456',
-  files: ['sys/config.g', 'sys/homex.g', 'macros/print_start.g']
+  files: ['sys/config.g', 'sys/homex.g', 'macros/print_start.g'],
+  changedFiles: ['sys/config.g']
+}
+
+const BACKUP_FILE_DIFF_RESPONSE = {
+  file: 'sys/config.g',
+  status: 'modified',
+  hunks: [
+    {
+      index: 0,
+      header: '@@ -1,3 +1,3 @@',
+      lines: [' G28', '-M906 X800', '+M906 X1000', ' M584 X0'],
+      summary: 'Lines 1-3'
+    }
+  ]
 }
 
 const BRANCHES_RESPONSE = {
@@ -286,10 +300,36 @@ describe('API contract: /backups response', () => {
 })
 
 describe('API contract: /backup?hash=<hash> response', () => {
-  it('has hash and files', () => {
-    assertHasKeys(BACKUP_DETAIL_RESPONSE, ['hash', 'files'])
+  it('has hash, files, and changedFiles', () => {
+    assertHasKeys(BACKUP_DETAIL_RESPONSE, ['hash', 'files', 'changedFiles'])
     expect(typeof BACKUP_DETAIL_RESPONSE.hash).toBe('string')
     expect(Array.isArray(BACKUP_DETAIL_RESPONSE.files)).toBe(true)
+    expect(Array.isArray(BACKUP_DETAIL_RESPONSE.changedFiles)).toBe(true)
+  })
+
+  it('changedFiles is a subset of files', () => {
+    BACKUP_DETAIL_RESPONSE.changedFiles.forEach(f => {
+      expect(BACKUP_DETAIL_RESPONSE.files).toContain(f)
+    })
+  })
+})
+
+describe('API contract: /backupFileDiff?hash=<hash>&file=<path> response', () => {
+  it('has file, status, and hunks', () => {
+    assertHasKeys(BACKUP_FILE_DIFF_RESPONSE, ['file', 'status', 'hunks'])
+    expect(typeof BACKUP_FILE_DIFF_RESPONSE.file).toBe('string')
+    expect(['modified', 'added', 'deleted', 'unchanged', 'unknown']).toContain(BACKUP_FILE_DIFF_RESPONSE.status)
+  })
+
+  it('hunks have full detail (lines + summary)', () => {
+    expect(BACKUP_FILE_DIFF_RESPONSE.hunks.length).toBeGreaterThan(0)
+    BACKUP_FILE_DIFF_RESPONSE.hunks.forEach(assertDetailHunkShape)
+  })
+
+  it('hunk lines have diff prefix characters', () => {
+    BACKUP_FILE_DIFF_RESPONSE.hunks.forEach(hunk => {
+      hunk.lines.forEach(assertHunkLineFormat)
+    })
   })
 })
 

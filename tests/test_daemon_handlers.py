@@ -293,6 +293,51 @@ class TestHandleBackupDetailEdgeCases:
         resp = daemon.handle_backup(cmd, manager, "", {})
         assert resp["status"] == 400
 
+    def test_includes_changed_files(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_files.return_value = ["sys/config.g", "sys/homex.g"]
+        manager.get_backup_changed_files.return_value = ["sys/config.g"]
+
+        resp = daemon.handle_backup(cmd, manager, "", {"hash": "abc123"})
+        body = json.loads(resp["body"])
+        assert body["changedFiles"] == ["sys/config.g"]
+        assert len(body["files"]) == 2
+
+
+class TestHandleBackupFileDiff:
+    def test_returns_diff(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_diff.return_value = {
+            "file": "sys/config.g", "status": "modified",
+            "hunks": [{"index": 0, "header": "@@ -1 +1 @@", "lines": ["-old", "+new"], "summary": "Line 1"}],
+        }
+        resp = daemon.handle_backup_file_diff(cmd, manager, "", {"hash": "abc", "file": "sys/config.g"})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert body["status"] == "modified"
+
+    def test_missing_hash(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_backup_file_diff(MagicMock(), MagicMock(), "", {"file": "x"})
+        assert resp["status"] == 400
+
+    def test_missing_file(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_backup_file_diff(MagicMock(), MagicMock(), "", {"hash": "x"})
+        assert resp["status"] == 400
+
+    def test_url_decodes_file_path(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_diff.return_value = {"file": "sys/config file.g", "status": "modified", "hunks": []}
+        daemon.handle_backup_file_diff(cmd, manager, "", {"hash": "abc", "file": "sys/config%20file.g"})
+        manager.get_backup_file_diff.assert_called_once_with("abc", "sys/config file.g")
+
     def test_download_exception_returns_500(self):
         daemon = _import_daemon()
         cmd = MagicMock()

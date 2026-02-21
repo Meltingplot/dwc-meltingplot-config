@@ -43,17 +43,9 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 # Files that must never be overwritten by reference config updates.
 # These contain machine-specific overrides (calibration data, user
 # customisations) that would be lost if replaced with reference defaults.
-#
-# Matching rules:
-#   - Path prefixes: any ref_path starting with the pattern is protected
-#     (covers both files and directories, e.g. "sys/meltingplot/machine-override"
-#      matches "sys/meltingplot/machine-override.g" and
-#      "sys/meltingplot/machine-override/somefile.g").
-#   - Exact paths: only the exact ref_path is protected.
-PROTECTED_PATH_PREFIXES = (
+# Matched by exact ref_path.
+PROTECTED_FILES = (
     "sys/meltingplot/machine-override",
-)
-PROTECTED_EXACT_PATHS = (
     "sys/meltingplot/dsf-config-override.g",
 )
 
@@ -588,10 +580,7 @@ def is_protected(ref_path):
     Protected files contain machine-specific calibration or user
     overrides that must never be replaced by reference config updates.
     """
-    for prefix in PROTECTED_PATH_PREFIXES:
-        if ref_path.startswith(prefix):
-            return True
-    return ref_path in PROTECTED_EXACT_PATHS
+    return ref_path in PROTECTED_FILES
 
 
 # --- Hunk patching helpers ---

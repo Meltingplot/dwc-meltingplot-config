@@ -519,11 +519,8 @@ def protected_file_repo(tmp_path):
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
     (mp_dir / "dsf-config-override.g").write_text("M906 X900\n")
-    (mp_dir / "machine-override.g").write_text("M208 X300 Y300 Z400\n")
-
-    mo_dir = mp_dir / "machine-override"
-    mo_dir.mkdir()
-    (mo_dir / "axes.g").write_text("M584 X0 Y1\n")
+    # machine-override is a file without extension
+    (mp_dir / "machine-override").write_text("M208 X300 Y300 Z400\n")
 
     subprocess.run(["git", "add", "-A"], cwd=str(clone_dir), check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "config with overrides"], cwd=str(clone_dir), check=True, capture_output=True)
@@ -545,11 +542,7 @@ def protected_env(tmp_path, protected_file_repo):
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
     (mp_dir / "dsf-config-override.g").write_text("M906 X800 ORIGINAL\n")
-    (mp_dir / "machine-override.g").write_text("M208 X200 Y200 Z300 ORIGINAL\n")
-
-    mo_dir = mp_dir / "machine-override"
-    mo_dir.mkdir()
-    (mo_dir / "axes.g").write_text("M584 X0 Y1 ORIGINAL\n")
+    (mp_dir / "machine-override").write_text("M208 X200 Y200 Z300 ORIGINAL\n")
 
     ref_dir = str(tmp_path / "reference")
     backup_dir = str(tmp_path / "backups")
@@ -586,15 +579,14 @@ class TestProtectedFiles:
 
         assert statuses["sys/config.g"] == "unchanged"
         assert statuses["sys/meltingplot/dsf-config-override.g"] == "protected"
-        assert statuses["sys/meltingplot/machine-override.g"] == "protected"
-        assert statuses["sys/meltingplot/machine-override/axes.g"] == "protected"
+        assert statuses["sys/meltingplot/machine-override"] == "protected"
 
     def test_diff_file_returns_protected_status(self, protected_env):
         """diff_file on a protected file should return 'protected' status."""
         env = protected_env
         env["manager"].sync(env["repo_url"], "1.0")
 
-        detail = env["manager"].diff_file("sys/meltingplot/dsf-config-override.g")
+        detail = env["manager"].diff_file("sys/meltingplot/machine-override")
         assert detail["status"] == "protected"
         assert detail["hunks"] == []
         assert detail["unifiedDiff"] == ""
@@ -610,25 +602,21 @@ class TestProtectedFiles:
 
         # Protected files should be in skipped, not applied
         assert "sys/meltingplot/dsf-config-override.g" in result["skipped"]
-        assert "sys/meltingplot/machine-override.g" in result["skipped"]
-        assert "sys/meltingplot/machine-override/axes.g" in result["skipped"]
+        assert "sys/meltingplot/machine-override" in result["skipped"]
 
         # Protected files should retain their original content
         override_content = (pfs / "sys" / "meltingplot" / "dsf-config-override.g").read_text()
         assert "ORIGINAL" in override_content
 
-        machine_content = (pfs / "sys" / "meltingplot" / "machine-override.g").read_text()
+        machine_content = (pfs / "sys" / "meltingplot" / "machine-override").read_text()
         assert "ORIGINAL" in machine_content
-
-        axes_content = (pfs / "sys" / "meltingplot" / "machine-override" / "axes.g").read_text()
-        assert "ORIGINAL" in axes_content
 
     def test_apply_file_rejects_protected_file(self, protected_env):
         """apply_file on a protected file should return an error."""
         env = protected_env
         env["manager"].sync(env["repo_url"], "1.0")
 
-        result = env["manager"].apply_file("sys/meltingplot/dsf-config-override.g")
+        result = env["manager"].apply_file("sys/meltingplot/machine-override")
         assert "error" in result
         assert "Protected" in result["error"]
 
@@ -637,7 +625,7 @@ class TestProtectedFiles:
         env = protected_env
         env["manager"].sync(env["repo_url"], "1.0")
 
-        result = env["manager"].apply_hunks("sys/meltingplot/machine-override.g", [0])
+        result = env["manager"].apply_hunks("sys/meltingplot/dsf-config-override.g", [0])
         assert "error" in result
         assert "Protected" in result["error"]
 

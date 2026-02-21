@@ -49,13 +49,12 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 #     (covers both files and directories, e.g. "sys/meltingplot/machine-override"
 #      matches "sys/meltingplot/machine-override.g" and
 #      "sys/meltingplot/machine-override/somefile.g").
-#   - Filename matches: any ref_path whose basename equals the pattern is
-#     protected regardless of directory.
+#   - Exact paths: only the exact ref_path is protected.
 PROTECTED_PATH_PREFIXES = (
     "sys/meltingplot/machine-override",
 )
-PROTECTED_FILENAMES = (
-    "dsf-config-override.g",
+PROTECTED_EXACT_PATHS = (
+    "sys/meltingplot/dsf-config-override.g",
 )
 
 # Default directory mapping (fallback when DSF object model is unavailable).
@@ -592,8 +591,7 @@ def is_protected(ref_path):
     for prefix in PROTECTED_PATH_PREFIXES:
         if ref_path.startswith(prefix):
             return True
-    basename = os.path.basename(ref_path)
-    return basename in PROTECTED_FILENAMES
+    return ref_path in PROTECTED_EXACT_PATHS
 
 
 # --- Hunk patching helpers ---

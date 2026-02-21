@@ -397,7 +397,7 @@ describe('ConfigDiff', () => {
 
     it('loadFileDetail skips fetch for protected files', async () => {
       const wrapper = mountComponent()
-      const file = { file: 'sys/dsf-config-override.g', status: 'protected', hunks: [] }
+      const file = { file: 'sys/meltingplot/dsf-config-override.g', status: 'protected', hunks: [] }
       global.fetch = jest.fn()
       await wrapper.vm.loadFileDetail(file)
       expect(global.fetch).not.toHaveBeenCalled()

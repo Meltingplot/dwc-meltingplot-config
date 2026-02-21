@@ -4,7 +4,7 @@ import pytest
 
 from config_manager import (
     BACKUP_INCLUDED_DIRS,
-    PROTECTED_FILENAMES,
+    PROTECTED_EXACT_PATHS,
     PROTECTED_PATH_PREFIXES,
     ConfigManager,
     _apply_single_hunk,
@@ -464,11 +464,12 @@ class TestIsProtected:
     def test_machine_override_exact(self):
         assert is_protected("sys/meltingplot/machine-override") is True
 
-    def test_dsf_config_override_in_sys(self):
-        assert is_protected("sys/dsf-config-override.g") is True
-
-    def test_dsf_config_override_in_subdirectory(self):
+    def test_dsf_config_override_exact_path(self):
         assert is_protected("sys/meltingplot/dsf-config-override.g") is True
+
+    def test_dsf_config_override_wrong_directory_not_protected(self):
+        """Only the exact path sys/meltingplot/dsf-config-override.g is protected."""
+        assert is_protected("sys/dsf-config-override.g") is False
 
     def test_normal_config_not_protected(self):
         assert is_protected("sys/config.g") is False
@@ -489,4 +490,4 @@ class TestIsProtected:
 
     def test_constants_are_tuples(self):
         assert isinstance(PROTECTED_PATH_PREFIXES, tuple)
-        assert isinstance(PROTECTED_FILENAMES, tuple)
+        assert isinstance(PROTECTED_EXACT_PATHS, tuple)

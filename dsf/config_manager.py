@@ -40,6 +40,24 @@ BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 # (gcodes, firmware, www, menu) is excluded by not being staged.
 BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 
+# Files that must never be overwritten by reference config updates.
+# These contain machine-specific overrides (calibration data, user
+# customisations) that would be lost if replaced with reference defaults.
+#
+# Matching rules:
+#   - Path prefixes: any ref_path starting with the pattern is protected
+#     (covers both files and directories, e.g. "sys/meltingplot/machine-override"
+#      matches "sys/meltingplot/machine-override.g" and
+#      "sys/meltingplot/machine-override/somefile.g").
+#   - Filename matches: any ref_path whose basename equals the pattern is
+#     protected regardless of directory.
+PROTECTED_PATH_PREFIXES = (
+    "sys/meltingplot/machine-override",
+)
+PROTECTED_FILENAMES = (
+    "dsf-config-override.g",
+)
+
 # Default directory mapping (fallback when DSF object model is unavailable).
 # In production, the daemon reads model.directories and builds this dynamically.
 DEFAULT_DIRECTORY_MAP = {
@@ -234,6 +252,17 @@ class ConfigManager:
             if printer_path is None:
                 continue
 
+            if is_protected(ref_path):
+                results.append(
+                    {
+                        "file": ref_path,
+                        "printerPath": printer_path,
+                        "status": "protected",
+                        "hunks": [],
+                    }
+                )
+                continue
+
             ref_content = self._read_reference_file(ref_path)
             printer_content = self._read_printer_file(printer_path)
 
@@ -284,6 +313,14 @@ class ConfigManager:
         printer_path = self._ref_to_printer_path(ref_path)
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
+
+        if is_protected(ref_path):
+            return {
+                "file": ref_path,
+                "status": "protected",
+                "hunks": [],
+                "unifiedDiff": "",
+            }
 
         ref_content = self._read_reference_file(ref_path)
         printer_content = self._read_printer_file(printer_path)
@@ -378,10 +415,14 @@ class ConfigManager:
         self._create_backup("Pre-update backup")
         ref_files = list_files(REFERENCE_DIR)
         applied = []
+        skipped = []
 
         for ref_path in ref_files:
             printer_path = self._ref_to_printer_path(ref_path)
             if printer_path is None:
+                continue
+            if is_protected(ref_path):
+                skipped.append(ref_path)
                 continue
             ref_content = self._read_reference_file(ref_path)
             if ref_content is not None:
@@ -390,10 +431,16 @@ class ConfigManager:
 
         branch = self.get_active_branch()
         self._create_backup(f"Applied reference {branch}")
-        return {"applied": applied}
+        result = {"applied": applied}
+        if skipped:
+            result["skipped"] = skipped
+        return result
 
     def apply_file(self, ref_path):
         """Apply a single reference file to the printer (with backup)."""
+        if is_protected(ref_path):
+            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
+
         printer_path = self._ref_to_printer_path(ref_path)
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
@@ -412,6 +459,9 @@ class ConfigManager:
 
         Returns dict with 'applied' and 'failed' hunk indices.
         """
+        if is_protected(ref_path):
+            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
+
         printer_path = self._ref_to_printer_path(ref_path)
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
@@ -528,6 +578,22 @@ class ConfigManager:
         """Delete a specific backup commit from the history."""
         backup_delete(BACKUP_DIR, commit_hash)
         return {"deleted": commit_hash}
+
+
+# --- Protected file helpers ---
+
+
+def is_protected(ref_path):
+    """Check whether a reference path is protected from overwrites.
+
+    Protected files contain machine-specific calibration or user
+    overrides that must never be replaced by reference config updates.
+    """
+    for prefix in PROTECTED_PATH_PREFIXES:
+        if ref_path.startswith(prefix):
+            return True
+    basename = os.path.basename(ref_path)
+    return basename in PROTECTED_FILENAMES
 
 
 # --- Hunk patching helpers ---

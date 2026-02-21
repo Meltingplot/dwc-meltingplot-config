@@ -4,10 +4,13 @@ import pytest
 
 from config_manager import (
     BACKUP_INCLUDED_DIRS,
+    PROTECTED_FILENAMES,
+    PROTECTED_PATH_PREFIXES,
     ConfigManager,
     _apply_single_hunk,
     _hunk_summary,
     _parse_hunk_header,
+    is_protected,
 )
 
 
@@ -444,3 +447,46 @@ class TestMultiHunkOffsetAccumulation:
 
         result = "".join(result_lines)
         assert result == reference
+
+
+# --- Protected files ---
+
+
+class TestIsProtected:
+    """Tests for the is_protected() helper."""
+
+    def test_machine_override_file(self):
+        assert is_protected("sys/meltingplot/machine-override.g") is True
+
+    def test_machine_override_directory(self):
+        assert is_protected("sys/meltingplot/machine-override/some-file.g") is True
+
+    def test_machine_override_exact(self):
+        assert is_protected("sys/meltingplot/machine-override") is True
+
+    def test_dsf_config_override_in_sys(self):
+        assert is_protected("sys/dsf-config-override.g") is True
+
+    def test_dsf_config_override_in_subdirectory(self):
+        assert is_protected("sys/meltingplot/dsf-config-override.g") is True
+
+    def test_normal_config_not_protected(self):
+        assert is_protected("sys/config.g") is False
+
+    def test_macros_not_protected(self):
+        assert is_protected("macros/print_start.g") is False
+
+    def test_filaments_not_protected(self):
+        assert is_protected("filaments/PLA/config.g") is False
+
+    def test_similar_name_not_protected(self):
+        """A file that merely contains 'override' is not protected."""
+        assert is_protected("sys/my-override-settings.g") is False
+
+    def test_similar_prefix_not_protected(self):
+        """Files in sys/meltingplot/ that don't match the prefix are fine."""
+        assert is_protected("sys/meltingplot/other-file.g") is False
+
+    def test_constants_are_tuples(self):
+        assert isinstance(PROTECTED_PATH_PREFIXES, tuple)
+        assert isinstance(PROTECTED_FILENAMES, tuple)

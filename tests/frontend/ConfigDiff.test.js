@@ -71,47 +71,109 @@ describe('ConfigDiff', () => {
       expect(wrapper.vm.fileStatusIcon('extra')).toBe('mdi-file-question')
     })
 
-    it('sideBySideLines pairs removed and added lines', () => {
+    it('parseHunkHeader parses standard hunk header', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.parseHunkHeader('@@ -10,7 +10,8 @@')).toEqual({
+        oldStart: 10, oldCount: 7, newStart: 10, newCount: 8
+      })
+    })
+
+    it('parseHunkHeader parses single-line hunk header', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.parseHunkHeader('@@ -5 +5 @@')).toEqual({
+        oldStart: 5, oldCount: 1, newStart: 5, newCount: 1
+      })
+    })
+
+    it('parseHunkHeader returns null for invalid input', () => {
+      const wrapper = mountComponent()
+      expect(wrapper.vm.parseHunkHeader(null)).toBeNull()
+      expect(wrapper.vm.parseHunkHeader('')).toBeNull()
+      expect(wrapper.vm.parseHunkHeader('not a header')).toBeNull()
+    })
+
+    it('sideBySideLines pairs removed and added lines with line numbers', () => {
       const wrapper = mountComponent()
       const hunk = {
+        header: '@@ -10,3 +20,3 @@',
         lines: [' context', '-old line', '+new line', ' end']
       }
       const rows = wrapper.vm.sideBySideLines(hunk)
       expect(rows).toHaveLength(3)
-      // Context line appears on both sides
-      expect(rows[0]).toEqual({ left: 'context', leftClass: 'diff-context', right: 'context', rightClass: 'diff-context' })
+      // Context line appears on both sides with line numbers
+      expect(rows[0]).toEqual({ leftLine: 10, left: 'context', leftClass: 'diff-context', rightLine: 20, right: 'context', rightClass: 'diff-context' })
       // Removed on left, added on right
-      expect(rows[1]).toEqual({ left: 'old line', leftClass: 'diff-remove', right: 'new line', rightClass: 'diff-add' })
+      expect(rows[1]).toEqual({ leftLine: 11, left: 'old line', leftClass: 'diff-remove', rightLine: 21, right: 'new line', rightClass: 'diff-add' })
       // Trailing context
-      expect(rows[2]).toEqual({ left: 'end', leftClass: 'diff-context', right: 'end', rightClass: 'diff-context' })
+      expect(rows[2]).toEqual({ leftLine: 12, left: 'end', leftClass: 'diff-context', rightLine: 22, right: 'end', rightClass: 'diff-context' })
     })
 
-    it('sideBySideLines handles unbalanced removes and adds', () => {
+    it('sideBySideLines handles unbalanced removes and adds with line numbers', () => {
       const wrapper = mountComponent()
       const hunk = {
+        header: '@@ -5,2 +5,1 @@',
         lines: ['-removed1', '-removed2', '+added1']
       }
       const rows = wrapper.vm.sideBySideLines(hunk)
       expect(rows).toHaveLength(2)
-      expect(rows[0]).toEqual({ left: 'removed1', leftClass: 'diff-remove', right: 'added1', rightClass: 'diff-add' })
-      expect(rows[1]).toEqual({ left: 'removed2', leftClass: 'diff-remove', right: null, rightClass: 'diff-empty' })
+      expect(rows[0]).toEqual({ leftLine: 5, left: 'removed1', leftClass: 'diff-remove', rightLine: 5, right: 'added1', rightClass: 'diff-add' })
+      expect(rows[1]).toEqual({ leftLine: 6, left: 'removed2', leftClass: 'diff-remove', rightLine: null, right: null, rightClass: 'diff-empty' })
     })
 
-    it('sideBySideLines handles only adds', () => {
+    it('sideBySideLines handles only adds with line numbers', () => {
       const wrapper = mountComponent()
-      const hunk = { lines: ['+new1', '+new2'] }
+      const hunk = { header: '@@ -1,0 +1,2 @@', lines: ['+new1', '+new2'] }
       const rows = wrapper.vm.sideBySideLines(hunk)
       expect(rows).toHaveLength(2)
+      expect(rows[0].leftLine).toBeNull()
       expect(rows[0].left).toBeNull()
       expect(rows[0].leftClass).toBe('diff-empty')
+      expect(rows[0].rightLine).toBe(1)
       expect(rows[0].right).toBe('new1')
       expect(rows[0].rightClass).toBe('diff-add')
+    })
+
+    it('sideBySideLines defaults to line 1 without header', () => {
+      const wrapper = mountComponent()
+      const hunk = { lines: [' context'] }
+      const rows = wrapper.vm.sideBySideLines(hunk)
+      expect(rows).toHaveLength(1)
+      expect(rows[0].leftLine).toBe(1)
+      expect(rows[0].rightLine).toBe(1)
     })
 
     it('sideBySideLines returns empty array for hunk without lines', () => {
       const wrapper = mountComponent()
       expect(wrapper.vm.sideBySideLines({})).toEqual([])
       expect(wrapper.vm.sideBySideLines({ lines: null })).toEqual([])
+    })
+
+    it('skippedLinesBetween returns gap before first hunk', () => {
+      const wrapper = mountComponent()
+      const file = {
+        hunks: [{ index: 0, header: '@@ -10,3 +10,3 @@' }]
+      }
+      expect(wrapper.vm.skippedLinesBetween(file, 0)).toBe(9)
+    })
+
+    it('skippedLinesBetween returns 0 when first hunk starts at line 1', () => {
+      const wrapper = mountComponent()
+      const file = {
+        hunks: [{ index: 0, header: '@@ -1,3 +1,3 @@' }]
+      }
+      expect(wrapper.vm.skippedLinesBetween(file, 0)).toBe(0)
+    })
+
+    it('skippedLinesBetween returns gap between hunks', () => {
+      const wrapper = mountComponent()
+      const file = {
+        hunks: [
+          { index: 0, header: '@@ -1,3 +1,3 @@' },
+          { index: 1, header: '@@ -10,3 +10,3 @@' }
+        ]
+      }
+      // Hunk 0 covers lines 1-3, hunk 1 starts at 10, so gap = 10 - (1+3) = 6
+      expect(wrapper.vm.skippedLinesBetween(file, 1)).toBe(6)
     })
   })
 

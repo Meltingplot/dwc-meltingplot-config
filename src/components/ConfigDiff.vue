@@ -67,28 +67,52 @@
                 </v-btn>
               </v-toolbar>
 
-              <div v-for="hunk in file.hunks" :key="hunk.index" class="hunk-block mb-3">
-                <div class="hunk-header d-flex align-center pa-2">
-                  <v-checkbox v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
-                  <code class="hunk-range">{{ hunk.header }}</code>
-                  <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
-                </div>
+              <div class="diff-file-block">
                 <table class="diff-table">
+                  <colgroup>
+                    <col class="col-linenum">
+                    <col class="col-content">
+                    <col class="col-linenum">
+                    <col class="col-content">
+                  </colgroup>
                   <thead>
                     <tr>
+                      <th class="diff-col-header diff-col-linenum diff-col-left" />
                       <th class="diff-col-header diff-col-left">Current (Printer)</th>
+                      <th class="diff-col-header diff-col-linenum diff-col-right" />
                       <th class="diff-col-header diff-col-right">Reference (New)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(row, i) in sideBySideLines(hunk)" :key="i">
-                      <td :class="['diff-cell', row.leftClass]">
-                        <code v-if="row.left !== null">{{ row.left }}</code>
-                      </td>
-                      <td :class="['diff-cell', row.rightClass]">
-                        <code v-if="row.right !== null">{{ row.right }}</code>
-                      </td>
-                    </tr>
+                    <template v-for="(hunk, hunkIdx) in file.hunks">
+                      <tr :key="'sep-' + hunk.index" class="hunk-separator-row">
+                        <td colspan="4" class="hunk-separator">
+                          <div class="d-flex align-center">
+                            <v-checkbox v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
+                            <v-icon x-small class="mr-1 hunk-fold-icon">mdi-dots-vertical</v-icon>
+                            <code class="hunk-range">{{ hunk.header }}</code>
+                            <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
+                            <span v-if="skippedLinesBetween(file, hunkIdx) > 0" class="ml-2 caption grey--text text--darken-1">
+                              ({{ skippedLinesBetween(file, hunkIdx) }} lines hidden)
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr v-for="(row, i) in sideBySideLines(hunk)" :key="'line-' + hunk.index + '-' + i">
+                        <td :class="['diff-linenum', row.leftClass]">
+                          <code v-if="row.leftLine !== null">{{ row.leftLine }}</code>
+                        </td>
+                        <td :class="['diff-cell', row.leftClass]">
+                          <code v-if="row.left !== null">{{ row.left }}</code>
+                        </td>
+                        <td :class="['diff-linenum', row.rightClass]">
+                          <code v-if="row.rightLine !== null">{{ row.rightLine }}</code>
+                        </td>
+                        <td :class="['diff-cell', row.rightClass]">
+                          <code v-if="row.right !== null">{{ row.right }}</code>
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -155,8 +179,33 @@ export default {
     fileStatusIcon(status) {
       return (FILE_STATUS[status] || FILE_STATUS.modified).icon
     },
+    parseHunkHeader(header) {
+      if (!header) return null
+      const m = header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
+      if (!m) return null
+      return {
+        oldStart: parseInt(m[1]),
+        oldCount: m[2] !== undefined ? parseInt(m[2]) : 1,
+        newStart: parseInt(m[3]),
+        newCount: m[4] !== undefined ? parseInt(m[4]) : 1
+      }
+    },
+    skippedLinesBetween(file, hunkIdx) {
+      const curr = this.parseHunkHeader(file.hunks[hunkIdx].header)
+      if (!curr) return 0
+      if (hunkIdx === 0) {
+        return curr.oldStart > 1 ? curr.oldStart - 1 : 0
+      }
+      const prev = this.parseHunkHeader(file.hunks[hunkIdx - 1].header)
+      if (!prev) return 0
+      return curr.oldStart - (prev.oldStart + prev.oldCount)
+    },
     sideBySideLines(hunk) {
       if (!hunk.lines) return []
+      const parsed = this.parseHunkHeader(hunk.header)
+      let leftLine = parsed ? parsed.oldStart : 1
+      let rightLine = parsed ? parsed.newStart : 1
+
       const rows = []
       const removes = []
       const adds = []
@@ -165,12 +214,16 @@ export default {
         const max = Math.max(removes.length, adds.length)
         for (let i = 0; i < max; i++) {
           rows.push({
+            leftLine: i < removes.length ? leftLine + i : null,
             left: i < removes.length ? removes[i].substring(1) : null,
             leftClass: i < removes.length ? 'diff-remove' : 'diff-empty',
+            rightLine: i < adds.length ? rightLine + i : null,
             right: i < adds.length ? adds[i].substring(1) : null,
             rightClass: i < adds.length ? 'diff-add' : 'diff-empty'
           })
         }
+        leftLine += removes.length
+        rightLine += adds.length
         removes.length = 0
         adds.length = 0
       }
@@ -184,11 +237,15 @@ export default {
           flushPairs()
           const text = line.startsWith(' ') ? line.substring(1) : line
           rows.push({
+            leftLine: leftLine,
             left: text,
             leftClass: 'diff-context',
+            rightLine: rightLine,
             right: text,
             rightClass: 'diff-context'
           })
+          leftLine++
+          rightLine++
         }
       }
       flushPairs()
@@ -234,14 +291,10 @@ export default {
 </script>
 
 <style scoped>
-.hunk-block {
+.diff-file-block {
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   overflow: hidden;
-}
-.hunk-header {
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
 }
 .hunk-range {
   font-size: 0.8em;
@@ -254,14 +307,23 @@ export default {
   font-size: 0.85em;
   line-height: 1.5;
 }
+.col-linenum {
+  width: 48px;
+}
+.col-content {
+  width: calc(50% - 48px);
+}
 .diff-col-header {
-  width: 50%;
   padding: 4px 8px;
   font-size: 0.8em;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e0e0e0;
+}
+.diff-col-linenum {
+  width: 48px;
+  text-align: center;
 }
 .diff-col-left {
   background-color: #fff3e0;
@@ -272,8 +334,49 @@ export default {
   background-color: #e8f5e9;
   color: #1b5e20;
 }
+/* Line number gutter */
+.diff-linenum {
+  width: 48px;
+  padding: 1px 6px;
+  text-align: right;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+  user-select: none;
+}
+.diff-linenum code {
+  font-size: 0.8em;
+  color: #9e9e9e;
+  white-space: nowrap;
+}
+.diff-linenum.diff-remove {
+  background-color: #fce4ec;
+  border-right: 1px solid #e0e0e0;
+}
+.diff-linenum.diff-add {
+  background-color: #e0f2e9;
+}
+.diff-linenum.diff-context {
+  background-color: #f5f5f5;
+  border-right: 1px solid #e0e0e0;
+}
+.diff-linenum.diff-empty {
+  background-color: #f5f5f5;
+  border-right: 1px solid #e0e0e0;
+}
+/* Separator between hunks */
+.hunk-separator-row td {
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+.hunk-separator {
+  background-color: #f0f4ff;
+  padding: 4px 8px;
+}
+.hunk-fold-icon {
+  color: #7b1fa2;
+}
+/* Content cells */
 .diff-cell {
-  width: 50%;
   padding: 1px 8px;
   vertical-align: top;
   border-bottom: 1px solid #f0f0f0;

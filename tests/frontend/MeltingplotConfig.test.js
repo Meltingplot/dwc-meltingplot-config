@@ -367,6 +367,57 @@ describe('MeltingplotConfig', () => {
             expect(wrapper.vm.loadingBackups).toBe(false);
         });
 
+        it('sets backupsLoaded after successful load', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            expect(wrapper.vm.backupsLoaded).toBe(false);
+
+            mockFetchSuccess({ backups: [] });
+            await wrapper.vm.loadBackups();
+            expect(wrapper.vm.backupsLoaded).toBe(true);
+        });
+
+        it('auto-loads backups when switching to History tab', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            const backups = [{ hash: 'abc', message: 'backup' }];
+            mockFetchSuccess({ backups });
+            wrapper.vm.activeTab = 2;
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(wrapper.vm.backups).toEqual(backups);
+            expect(wrapper.vm.backupsLoaded).toBe(true);
+        });
+
+        it('does not re-fetch backups on subsequent History tab visits', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            // First visit loads backups
+            mockFetchSuccess({ backups: [{ hash: 'abc', message: 'backup' }] });
+            wrapper.vm.activeTab = 2;
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+            expect(wrapper.vm.backupsLoaded).toBe(true);
+
+            const callCount = global.fetch.mock.calls.filter(c => c[0].includes('/backups')).length;
+
+            // Switch away and back
+            wrapper.vm.activeTab = 0;
+            await wrapper.vm.$nextTick();
+            wrapper.vm.activeTab = 2;
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+
+            // No additional backups fetch
+            const newCallCount = global.fetch.mock.calls.filter(c => c[0].includes('/backups')).length;
+            expect(newCallCount).toBe(callCount);
+        });
+
         it('shows error notification on failure', async () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent();

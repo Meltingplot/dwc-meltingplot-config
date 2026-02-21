@@ -373,34 +373,15 @@ describe('ConfigDiff', () => {
     })
   })
 
-  describe('protected files', () => {
-    it('shows protected files in changedFiles', () => {
+  describe('protected files are excluded', () => {
+    it('backend never sends protected files so they are not in changedFiles', () => {
       const files = [
         { file: 'sys/config.g', status: 'modified', hunks: [] },
-        { file: 'sys/meltingplot/machine-override.g', status: 'protected', hunks: [] },
         { file: 'sys/unchanged.g', status: 'unchanged', hunks: [] }
       ]
       const wrapper = mountComponent({ files })
-      expect(wrapper.vm.changedFiles).toHaveLength(2)
-      expect(wrapper.vm.changedFiles.map(f => f.status)).toContain('protected')
-    })
-
-    it('fileStatusColor returns grey for protected', () => {
-      const wrapper = mountComponent()
-      expect(wrapper.vm.fileStatusColor('protected')).toBe('grey')
-    })
-
-    it('fileStatusIcon returns lock for protected', () => {
-      const wrapper = mountComponent()
-      expect(wrapper.vm.fileStatusIcon('protected')).toBe('mdi-lock')
-    })
-
-    it('loadFileDetail skips fetch for protected files', async () => {
-      const wrapper = mountComponent()
-      const file = { file: 'sys/meltingplot/dsf-config-override.g', status: 'protected', hunks: [] }
-      global.fetch = jest.fn()
-      await wrapper.vm.loadFileDetail(file)
-      expect(global.fetch).not.toHaveBeenCalled()
+      expect(wrapper.vm.changedFiles).toHaveLength(1)
+      expect(wrapper.vm.changedFiles[0].file).toBe('sys/config.g')
     })
   })
 

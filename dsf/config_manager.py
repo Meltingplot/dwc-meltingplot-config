@@ -245,14 +245,6 @@ class ConfigManager:
                 continue
 
             if is_protected(ref_path):
-                results.append(
-                    {
-                        "file": ref_path,
-                        "printerPath": printer_path,
-                        "status": "protected",
-                        "hunks": [],
-                    }
-                )
                 continue
 
             ref_content = self._read_reference_file(ref_path)
@@ -307,12 +299,7 @@ class ConfigManager:
             return {"error": f"Unknown reference path: {ref_path}"}
 
         if is_protected(ref_path):
-            return {
-                "file": ref_path,
-                "status": "protected",
-                "hunks": [],
-                "unifiedDiff": "",
-            }
+            return {"error": f"Protected file: {ref_path}"}
 
         ref_content = self._read_reference_file(ref_path)
         printer_content = self._read_printer_file(printer_path)

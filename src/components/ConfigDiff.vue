@@ -43,15 +43,7 @@
           </v-expansion-panel-header>
 
           <v-expansion-panel-content>
-            <div v-if="file.status === 'protected'" class="pa-4">
-              <v-alert type="info" dense outlined>
-                <v-icon left small>mdi-lock</v-icon>
-                This file is protected and will not be overwritten by reference config updates.
-                It contains machine-specific overrides (calibration, user customisations).
-              </v-alert>
-            </div>
-
-            <div v-else-if="file.loadingDetail" class="text-center pa-4">
+            <div v-if="file.loadingDetail" class="text-center pa-4">
               <v-progress-circular indeterminate size="24" />
             </div>
 
@@ -167,8 +159,7 @@ const API_BASE = '/machine/MeltingplotConfig'
 const FILE_STATUS = {
   modified: { color: 'warning', icon: 'mdi-file-document-edit' },
   missing: { color: 'info', icon: 'mdi-file-plus' },
-  extra: { color: 'grey', icon: 'mdi-file-question' },
-  protected: { color: 'grey', icon: 'mdi-lock' }
+  extra: { color: 'grey', icon: 'mdi-file-question' }
 }
 
 export default {
@@ -272,7 +263,6 @@ export default {
       return rows
     },
     async loadFileDetail(file) {
-      if (file.status === 'protected') return
       if (file.status !== 'modified' && file.status !== 'missing') return
       // diff_all returns summary hunks (index + header only).
       // Skip fetch only if full detail (lines) is already loaded.

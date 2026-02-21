@@ -218,7 +218,8 @@ These patterns have caused real bugs in this project. Be aware of them:
 3. **File I/O on printer:** The daemon resolves virtual paths at startup (`cmd.resolve_path("0:/sys")` → `"/opt/dsf/sd/sys"`). ConfigManager stores this mapping and uses filesystem I/O. If `resolve_path()` fails, the default mapping (`DEFAULT_RESOLVED_DIRS`) is used.
 4. **Directory mapping trailing slashes:** DSF Directories values lack trailing slashes (`"0:/sys"`). The daemon adds them (`"0:/sys/"`). The reference repo folder name is extracted after the `:/` separator.
 5. **Side-by-side diff rendering:** `sideBySideLines(hunk)` pairs consecutive `-`/`+` lines into left/right columns. Context lines appear on both sides. Unbalanced removes/adds leave empty cells (`null` value, `diff-empty` CSS class).
-6. **Plugin upgrade wipes PLUGIN_DIR:** DSF removes and re-extracts `/opt/dsf/plugins/MeltingplotConfig/` during plugin upgrade. All persistent data (settings, reference repo, backups) must live in `DATA_DIR` (`/opt/dsf/sd/MeltingplotConfig/`), not `PLUGIN_DIR`. The daemon migrates from the legacy location on first startup after upgrade.
+6. **Plugin upgrade wipes PLUGIN_DIR:** DSF deletes the entire `/opt/dsf/plugins/MeltingplotConfig/` directory tree during plugin upgrade (confirmed empirically — the backup folder and `.git` are destroyed). All persistent data (settings, reference repo, backups) must live in `DATA_DIR` (`/opt/dsf/sd/MeltingplotConfig/`), not `PLUGIN_DIR`. The daemon migrates from the legacy location on first startup if the old data hasn't been wiped yet.
+7. **`plugin.data` reset on upgrade:** DSF removes the old Plugin entry from the object model and creates a new one from the new `plugin.json`. All runtime values written via `SetPluginData` are lost. The daemon must restore state from `settings.json` on every startup, not assume `plugin.data` persists across upgrades.
 
 ### Verifying upstream APIs
 

@@ -85,13 +85,35 @@ describe('ConfigDiff — loadFileDetail', () => {
             expect(file.hunks[0].selected).toBe(true);
         });
 
-        it('skips fetch for non-modified files', async () => {
+        it('skips fetch for unchanged files', async () => {
             const wrapper = mountComponent();
-            const file = { file: 'sys/homex.g', status: 'missing' };
+            const file = { file: 'sys/config.g', status: 'unchanged' };
 
             global.fetch = jest.fn();
             await wrapper.vm.loadFileDetail(file);
             expect(global.fetch).not.toHaveBeenCalled();
+        });
+
+        it('fetches detail for missing files', async () => {
+            const wrapper = mountComponent();
+            const file = { file: 'sys/homex.g', status: 'missing', hunks: [{ index: 0, header: '@@ -0,0 +1,2 @@' }] };
+
+            global.fetch = jest.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        hunks: [
+                            { index: 0, header: '@@ -0,0 +1,2 @@', lines: ['+G91', '+G1 H1 X-300 F3000'], summary: 'Lines 0-0' }
+                        ]
+                    })
+                })
+            );
+
+            await wrapper.vm.loadFileDetail(file);
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(file.hunks).toHaveLength(1);
+            expect(file.hunks[0].lines).toBeDefined();
+            expect(file.hunks[0].selected).toBe(true);
         });
 
         it('sets empty hunks on fetch error', async () => {

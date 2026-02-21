@@ -48,7 +48,18 @@
             </div>
 
             <div v-else-if="file.hunks && file.hunks.length > 0">
-              <v-toolbar flat dense class="mb-2">
+              <!-- Missing file: show info + create button above content -->
+              <div v-if="file.status === 'missing'" class="pa-4 pb-2">
+                <v-alert type="info" dense outlined>
+                  This file exists in the reference config but not on the printer.
+                </v-alert>
+                <v-btn small color="primary" @click="$emit('apply-file', file.file)">
+                  <v-icon left small>mdi-file-plus</v-icon>
+                  Create File
+                </v-btn>
+              </div>
+              <!-- Modified file: hunk selection toolbar -->
+              <v-toolbar v-else flat dense class="mb-2">
                 <v-btn x-small text @click="selectAllHunks(file)">Select all</v-btn>
                 <v-btn x-small text @click="deselectAllHunks(file)">Deselect all</v-btn>
                 <v-spacer />
@@ -80,7 +91,7 @@
                       <th class="diff-col-header diff-col-linenum diff-col-left" />
                       <th class="diff-col-header diff-col-left">Current (Printer)</th>
                       <th class="diff-col-header diff-col-linenum diff-col-right" />
-                      <th class="diff-col-header diff-col-right">Reference (New)</th>
+                      <th class="diff-col-header diff-col-right">{{ file.status === 'missing' ? 'New File Content' : 'Reference (New)' }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -88,7 +99,7 @@
                       <tr :key="'sep-' + hunk.index" class="hunk-separator-row">
                         <td colspan="4" class="hunk-separator">
                           <div class="d-flex align-center">
-                            <v-checkbox v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
+                            <v-checkbox v-if="file.status !== 'missing'" v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
                             <v-icon x-small class="mr-1 hunk-fold-icon">mdi-dots-vertical</v-icon>
                             <code class="hunk-range">{{ hunk.header }}</code>
                             <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
@@ -252,7 +263,7 @@ export default {
       return rows
     },
     async loadFileDetail(file) {
-      if (file.status !== 'modified') return
+      if (file.status !== 'modified' && file.status !== 'missing') return
       // diff_all returns summary hunks (index + header only).
       // Skip fetch only if full detail (lines) is already loaded.
       if (file.hunks && file.hunks.length > 0 && file.hunks[0].lines) return

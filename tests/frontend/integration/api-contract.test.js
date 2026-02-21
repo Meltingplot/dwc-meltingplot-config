@@ -49,7 +49,7 @@ const DIFF_ALL_RESPONSE = {
       file: 'macros/heat_bed.g',
       printerPath: '0:/macros/heat_bed.g',
       status: 'missing',
-      hunks: []
+      hunks: [{ index: 0, header: '@@ -0,0 +1,2 @@' }]
     }
   ]
 }
@@ -210,10 +210,20 @@ describe('API contract: /diff (all files) response', () => {
     })
   })
 
-  it('unchanged/missing files have empty hunks array', () => {
-    const nonModified = DIFF_ALL_RESPONSE.files.filter(f => f.status !== 'modified')
-    nonModified.forEach(f => {
+  it('unchanged files have empty hunks array', () => {
+    const unchanged = DIFF_ALL_RESPONSE.files.filter(f => f.status === 'unchanged')
+    unchanged.forEach(f => {
       expect(f.hunks).toEqual([])
+    })
+  })
+
+  it('missing files have summary hunks (no lines)', () => {
+    const missing = DIFF_ALL_RESPONSE.files.filter(f => f.status === 'missing')
+    expect(missing.length).toBeGreaterThan(0)
+    missing.forEach(f => {
+      expect(Array.isArray(f.hunks)).toBe(true)
+      expect(f.hunks.length).toBeGreaterThan(0)
+      f.hunks.forEach(assertSummaryHunkShape)
     })
   })
 })

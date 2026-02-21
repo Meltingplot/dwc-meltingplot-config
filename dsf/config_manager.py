@@ -238,12 +238,17 @@ class ConfigManager:
             printer_content = self._read_printer_file(printer_path)
 
             if printer_content is None:
+                # New file: compute summary hunks so the frontend shows a count
+                hunks = self._compute_hunks(ref_path, "", ref_content)
                 results.append(
                     {
                         "file": ref_path,
                         "printerPath": printer_path,
                         "status": "missing",
-                        "hunks": [],
+                        "hunks": [
+                            {"index": h["index"], "header": h["header"]}
+                            for h in hunks
+                        ],
                     }
                 )
             elif ref_content == printer_content:
@@ -287,11 +292,19 @@ class ConfigManager:
             return {"file": ref_path, "status": "not_in_reference"}
 
         if printer_content is None:
+            # New file: show the entire reference content as additions
+            hunks = self._compute_hunks(ref_path, "", ref_content)
+            unified = difflib.unified_diff(
+                [],
+                ref_content.splitlines(keepends=True),
+                fromfile=f"a/{ref_path}",
+                tofile=f"b/{ref_path}",
+            )
             return {
                 "file": ref_path,
                 "status": "missing",
-                "hunks": [],
-                "unifiedDiff": "",
+                "hunks": hunks,
+                "unifiedDiff": "".join(unified),
             }
 
         if ref_content == printer_content:

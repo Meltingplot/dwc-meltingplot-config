@@ -569,27 +569,25 @@ def protected_env(tmp_path, protected_file_repo):
 class TestProtectedFiles:
     """Integration tests for protected override files."""
 
-    def test_diff_all_marks_protected_files(self, protected_env):
-        """Protected files should appear with status 'protected' in diff_all."""
+    def test_diff_all_excludes_protected_files(self, protected_env):
+        """Protected files should be excluded from diff_all entirely."""
         env = protected_env
         env["manager"].sync(env["repo_url"], "1.0")
 
         diff = env["manager"].diff_all()
-        statuses = {f["file"]: f["status"] for f in diff}
+        files_in_diff = {f["file"] for f in diff}
 
-        assert statuses["sys/config.g"] == "unchanged"
-        assert statuses["sys/meltingplot/dsf-config-override.g"] == "protected"
-        assert statuses["sys/meltingplot/machine-override"] == "protected"
+        assert "sys/config.g" in files_in_diff
+        assert "sys/meltingplot/dsf-config-override.g" not in files_in_diff
+        assert "sys/meltingplot/machine-override" not in files_in_diff
 
-    def test_diff_file_returns_protected_status(self, protected_env):
-        """diff_file on a protected file should return 'protected' status."""
+    def test_diff_file_returns_error_for_protected(self, protected_env):
+        """diff_file on a protected file should return an error."""
         env = protected_env
         env["manager"].sync(env["repo_url"], "1.0")
 
         detail = env["manager"].diff_file("sys/meltingplot/machine-override")
-        assert detail["status"] == "protected"
-        assert detail["hunks"] == []
-        assert detail["unifiedDiff"] == ""
+        assert "error" in detail
 
     def test_apply_all_skips_protected_files(self, protected_env):
         """apply_all should skip protected files and report them as skipped."""

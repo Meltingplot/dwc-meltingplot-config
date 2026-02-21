@@ -90,7 +90,6 @@ def integration_env(tmp_path, reference_repo, printer_fs):
     with (
         patch("config_manager.REFERENCE_DIR", ref_dir),
         patch("config_manager.BACKUP_DIR", backup_dir),
-        patch("config_manager.PLUGIN_DIR", str(tmp_path)),
     ):
         manager = ConfigManager(
             dsf_command_connection=MagicMock(),
@@ -410,7 +409,6 @@ def special_char_env(tmp_path, special_char_repo):
     with (
         patch("config_manager.REFERENCE_DIR", ref_dir),
         patch("config_manager.BACKUP_DIR", backup_dir),
-        patch("config_manager.PLUGIN_DIR", str(tmp_path)),
     ):
         manager = ConfigManager(
             dsf_command_connection=MagicMock(),

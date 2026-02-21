@@ -40,7 +40,7 @@ from config_manager import ConfigManager, DATA_DIR
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    format="%(message)s",
     stream=sys.stdout,
 )
 logger = logging.getLogger("MeltingplotConfig")
@@ -466,14 +466,14 @@ def register_endpoints(cmd, manager):
                 _make_async_handler(cmd, manager, handler_func)
             )
             registered.append(endpoint)
-            logger.info("Registered endpoint: %s /%s/%s", method, API_NAMESPACE, path)
+            logger.debug("Registered endpoint: %s /%s/%s", method, API_NAMESPACE, path)
         except Exception as exc:
             logger.error("Failed to register %s %s: %s", method, path, exc)
     return registered
 
 
 def main():
-    logger.info("Meltingplot Config daemon starting...")
+    logger.info("Starting...")
 
     # Ensure persistent data directory exists (survives plugin upgrades)
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -488,9 +488,9 @@ def main():
         for key, value in persisted.items():
             if value:  # skip empty strings
                 set_plugin_data(cmd, key, value)
-        logger.info("Restored %d persisted setting(s) from disk", len(persisted))
+        logger.debug("Restored %d persisted setting(s) from disk", len(persisted))
     else:
-        logger.info("No persisted settings found, using defaults")
+        logger.debug("No persisted settings found, using defaults")
 
     # Read object model once at startup for firmware version + directory mappings
     dir_map = None
@@ -503,12 +503,12 @@ def main():
             fw = getattr(boards[0], "firmware_version", "") or ""
             if fw:
                 set_plugin_data(cmd, "detectedFirmwareVersion", fw)
-                logger.info("Detected firmware version: %s", fw)
+                logger.info("Firmware: %s", fw)
 
         # Build directory mapping from object model
         dir_map = build_directory_map(model)
         if dir_map:
-            logger.info("Directory mappings from DSF: %s", dir_map)
+            logger.debug("Directory mappings from DSF: %s", dir_map)
         else:
             logger.warning("No directory mappings from DSF, using defaults")
     except Exception as exc:
@@ -531,7 +531,7 @@ def main():
             if not real_path.endswith("/"):
                 real_path += "/"
             resolved_dirs[printer_prefix] = real_path
-            logger.info("Resolved %s -> %s", printer_prefix, real_path)
+            logger.debug("Resolved %s -> %s", printer_prefix, real_path)
         except Exception as exc:
             logger.warning("Could not resolve %s: %s", printer_prefix, exc)
 
@@ -544,10 +544,7 @@ def main():
     # Register HTTP endpoints (each runs in its own async handler thread)
     endpoints = register_endpoints(cmd, manager)
 
-    logger.info(
-        "Meltingplot Config daemon ready, %d endpoints registered",
-        len(endpoints),
-    )
+    logger.info("Ready (%d endpoints)", len(endpoints))
 
     # Keep main thread alive — endpoint handlers run in background threads
     try:

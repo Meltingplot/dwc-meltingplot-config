@@ -58,11 +58,11 @@ def _run(args, cwd=None, git_dir=None):
 def clone(repo_url, dest_path):
     """Clone a reference repository."""
     if os.path.isdir(os.path.join(dest_path, ".git")):
-        logger.info("Reference repo already cloned at %s", dest_path)
+        logger.debug("Reference repo already cloned at %s", dest_path)
         return
     os.makedirs(dest_path, exist_ok=True)
     _run(["clone", repo_url, dest_path])
-    logger.info("Cloned %s into %s", repo_url, dest_path)
+    logger.info("Cloned reference repository")
 
 
 def fetch(repo_path):
@@ -73,7 +73,7 @@ def fetch(repo_path):
 def checkout(repo_path, branch):
     """Checkout a specific branch."""
     _run(["checkout", branch], cwd=repo_path)
-    logger.info("Checked out branch %s", branch)
+    logger.info("Switched to branch %s", branch)
 
 
 def pull(repo_path):
@@ -174,12 +174,12 @@ def init_backup_repo(backup_path, worktree=None):
         _run(["config", "user.email", "meltingplot-config@localhost"], cwd=backup_path)
         _run(["config", "user.name", "MeltingplotConfig"], cwd=backup_path)
         _run(["config", "commit.gpgsign", "false"], cwd=backup_path)
-        logger.info("Initialized backup repo at %s", backup_path)
+        logger.debug("Initialized backup repo at %s", backup_path)
 
     # Always (re-)apply worktree so path changes between restarts are picked up.
     if worktree:
         _run(["config", "core.worktree", worktree], cwd=backup_path)
-        logger.info("Backup repo worktree set to %s", worktree)
+        logger.debug("Backup repo worktree set to %s", worktree)
 
 
 def backup_commit(backup_path, message, paths=None):
@@ -205,11 +205,14 @@ def backup_commit(backup_path, message, paths=None):
         capture_output=True,
     )
     if result.returncode == 0:
-        logger.info("No changes to commit in backup repo")
+        logger.debug("No changes to commit in backup repo")
         return None
     output = _run(["commit", "-m", message], cwd=cwd, git_dir=git_dir)
     commit_hash = _run(["rev-parse", "HEAD"], cwd=cwd, git_dir=git_dir)
-    logger.info("Backup commit: %s (%s)", commit_hash[:8], message)
+    # Strip the timestamp suffix (after " — ") for cleaner console output;
+    # the full message is preserved in the git commit itself.
+    display_msg = message.split(" \u2014 ")[0] if " \u2014 " in message else message
+    logger.info("Backup: %s", display_msg)
     return commit_hash
 
 
@@ -224,7 +227,7 @@ def backup_checkout(backup_path, commit_hash, paths=None):
         _run(["checkout", commit_hash, "--"] + list(paths), cwd=cwd, git_dir=git_dir)
     else:
         _run(["checkout", commit_hash, "--", "."], cwd=cwd, git_dir=git_dir)
-    logger.info("Checked out backup %s", commit_hash[:8])
+    logger.info("Restored backup %s", commit_hash[:8])
 
 
 def backup_log(backup_path, max_count=50):
@@ -326,7 +329,7 @@ def backup_delete(backup_path, commit_hash):
         if not has_parent:
             raise RuntimeError("Cannot delete the only backup")
         _run(["reset", "--hard", "HEAD~1"], cwd=backup_path)
-        logger.info("Deleted backup (HEAD reset): %s", commit_hash[:8])
+        logger.info("Deleted backup %s", commit_hash[:8])
     else:
         if not has_parent:
             raise RuntimeError(
@@ -337,4 +340,4 @@ def backup_delete(backup_path, commit_hash):
             ["rebase", "--onto", f"{commit_hash}^", commit_hash, "-X", "theirs"],
             cwd=backup_path,
         )
-        logger.info("Deleted backup (rebased): %s", commit_hash[:8])
+        logger.info("Deleted backup %s", commit_hash[:8])

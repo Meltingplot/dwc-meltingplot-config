@@ -28,8 +28,14 @@ from git_utils import (
 logger = logging.getLogger("MeltingplotConfig")
 
 PLUGIN_DIR = "/opt/dsf/plugins/MeltingplotConfig"
-REFERENCE_DIR = os.path.join(PLUGIN_DIR, "reference")
-BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
+
+# Persistent data directory — lives on the SD card so it survives plugin
+# upgrades (DSF wipes PLUGIN_DIR during upgrade/reinstall).
+# Placed directly under /opt/dsf/sd/ (not under sys/) to avoid being
+# visible in the DWC file browser.
+DATA_DIR = "/opt/dsf/sd/MeltingplotConfig"
+REFERENCE_DIR = os.path.join(DATA_DIR, "reference")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 # Directories backed up via the worktree-based backup repo.
 # Only these top-level printer directories are tracked; everything else

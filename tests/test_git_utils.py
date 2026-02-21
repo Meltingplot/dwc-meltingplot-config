@@ -274,6 +274,104 @@ class TestBackupRepoWorktree:
         assert "sys/sub/deep.g" in files
 
 
+class TestBackupNestedWorktree:
+    """Regression: backup repo nested inside its own worktree.
+
+    In production the layout is:
+        worktree  = /opt/dsf/sd
+        backup    = /opt/dsf/sd/MeltingplotConfig/backups
+
+    When backup_path is a child of the worktree, git resolves relative
+    pathspecs from cwd (the backup dir), not the worktree root.  This
+    caused 'git add -- sys' to fail with 'pathspec did not match'.
+    """
+
+    @pytest.fixture
+    def nested_env(self, tmp_path):
+        """Mimic the production layout: backup dir inside the worktree."""
+        worktree = tmp_path / "sd"
+        worktree.mkdir()
+        (worktree / "sys").mkdir()
+        (worktree / "sys" / "config.g").write_text("G28\n")
+        (worktree / "macros").mkdir()
+        (worktree / "macros" / "start.g").write_text("T0\n")
+
+        # Backup dir is a child of the worktree — this is the production layout
+        backup_dir = worktree / "MeltingplotConfig" / "backups"
+        git_utils.init_backup_repo(str(backup_dir), worktree=str(worktree))
+        return {"backup": str(backup_dir), "worktree": str(worktree)}
+
+    def test_commit_with_paths(self, nested_env):
+        """git add with relative paths succeeds when backup is inside worktree."""
+        commit = git_utils.backup_commit(
+            nested_env["backup"], "backup", paths=["sys", "macros"]
+        )
+        assert commit is not None
+        files = git_utils.backup_files_at(nested_env["backup"], commit)
+        assert "sys/config.g" in files
+        assert "macros/start.g" in files
+
+    def test_commit_selective_paths(self, nested_env):
+        """Only the specified paths are staged."""
+        commit = git_utils.backup_commit(
+            nested_env["backup"], "sys only", paths=["sys"]
+        )
+        assert commit is not None
+        files = git_utils.backup_files_at(nested_env["backup"], commit)
+        assert "sys/config.g" in files
+        assert "macros/start.g" not in files
+
+    def test_checkout_restores_all(self, nested_env):
+        """backup_checkout without paths restores the full commit."""
+        wt = nested_env["worktree"]
+        commit = git_utils.backup_commit(
+            nested_env["backup"], "snap", paths=["sys"]
+        )
+        # Modify file
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("changed\n")
+
+        git_utils.backup_checkout(nested_env["backup"], commit)
+        assert open(os.path.join(wt, "sys", "config.g")).read() == "G28\n"
+
+    def test_checkout_with_paths(self, nested_env):
+        """backup_checkout with explicit paths restores only those paths."""
+        wt = nested_env["worktree"]
+        git_utils.backup_commit(
+            nested_env["backup"], "snap", paths=["sys", "macros"]
+        )
+        # Modify both
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("new sys\n")
+        with open(os.path.join(wt, "macros", "start.g"), "w") as f:
+            f.write("new macro\n")
+
+        # Get the snapshot and restore only sys
+        log = git_utils.backup_log(nested_env["backup"])
+        git_utils.backup_checkout(
+            nested_env["backup"], log[0]["hash"], paths=["sys"]
+        )
+        assert open(os.path.join(wt, "sys", "config.g")).read() == "G28\n"
+        assert open(os.path.join(wt, "macros", "start.g")).read() == "new macro\n"
+
+    def test_worktree_tracks_changes(self, nested_env):
+        """Successive commits detect worktree changes."""
+        git_utils.backup_commit(
+            nested_env["backup"], "initial", paths=["sys"]
+        )
+        wt = nested_env["worktree"]
+        with open(os.path.join(wt, "sys", "config.g"), "w") as f:
+            f.write("G28\nM906 X800\n")
+        commit = git_utils.backup_commit(
+            nested_env["backup"], "updated", paths=["sys"]
+        )
+        assert commit is not None
+        content = git_utils.backup_file_content(
+            nested_env["backup"], commit, "sys/config.g"
+        )
+        assert "M906 X800" in content
+
+
 class TestBackupCheckout:
     """Tests for backup_checkout — restoring files from a commit."""
 

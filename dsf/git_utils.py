@@ -21,9 +21,16 @@ if GIT_BIN is None:
     logger.warning("Could not locate git binary; commands will likely fail")
 
 
-def _run(args, cwd=None):
-    """Run a git command and return stdout."""
-    cmd = [GIT_BIN] + args
+def _run(args, cwd=None, git_dir=None):
+    """Run a git command and return stdout.
+
+    If *git_dir* is given, ``--git-dir <git_dir>`` is prepended so that
+    git finds the repository even when *cwd* is not inside it.
+    """
+    cmd = [GIT_BIN]
+    if git_dir:
+        cmd.extend(["--git-dir", git_dir])
+    cmd.extend(args)
     logger.debug("Running: %s (cwd=%s)", " ".join(cmd), cwd)
     try:
         result = subprocess.run(
@@ -125,6 +132,30 @@ def find_closest_branch(repo_path, version):
     return branches[0], False
 
 
+def _backup_cwd(backup_path):
+    """Return ``(cwd, git_dir)`` for running git in a backup repo.
+
+    When ``core.worktree`` is configured **and** *backup_path* is nested
+    inside the worktree, relative pathspecs (e.g. ``sys``, ``.``) are
+    resolved by git from the current working directory — not the worktree
+    root.  This causes ``git add -- sys`` to fail with *pathspec did not
+    match* because git looks for ``<cwd>/sys`` instead of
+    ``<worktree>/sys``.
+
+    To fix this we run git from the worktree root and pass ``--git-dir``
+    explicitly so it still finds the repository.  When there is no
+    separate worktree, we fall back to the old behaviour.
+    """
+    git_dir = os.path.join(backup_path, ".git")
+    try:
+        worktree = _run(["config", "core.worktree"], cwd=backup_path)
+    except RuntimeError:
+        return backup_path, None
+    if worktree:
+        return worktree, git_dir
+    return backup_path, None
+
+
 # --- Backup repository operations ---
 
 
@@ -158,21 +189,26 @@ def backup_commit(backup_path, message, paths=None):
     worktree root), only those paths are staged.  Otherwise all changes
     are staged (``git add -A``).
     """
+    cwd, git_dir = _backup_cwd(backup_path)
     if paths:
-        _run(["add", "-A", "--"] + list(paths), cwd=backup_path)
+        _run(["add", "-A", "--"] + list(paths), cwd=cwd, git_dir=git_dir)
     else:
-        _run(["add", "-A"], cwd=backup_path)
+        _run(["add", "-A"], cwd=cwd, git_dir=git_dir)
     # Check if there's anything to commit
+    diff_cmd = [GIT_BIN]
+    if git_dir:
+        diff_cmd.extend(["--git-dir", git_dir])
+    diff_cmd.extend(["diff", "--cached", "--quiet"])
     result = subprocess.run(
-        [GIT_BIN, "diff", "--cached", "--quiet"],
-        cwd=backup_path,
+        diff_cmd,
+        cwd=cwd,
         capture_output=True,
     )
     if result.returncode == 0:
         logger.info("No changes to commit in backup repo")
         return None
-    output = _run(["commit", "-m", message], cwd=backup_path)
-    commit_hash = _run(["rev-parse", "HEAD"], cwd=backup_path)
+    output = _run(["commit", "-m", message], cwd=cwd, git_dir=git_dir)
+    commit_hash = _run(["rev-parse", "HEAD"], cwd=cwd, git_dir=git_dir)
     logger.info("Backup commit: %s (%s)", commit_hash[:8], message)
     return commit_hash
 
@@ -183,10 +219,11 @@ def backup_checkout(backup_path, commit_hash, paths=None):
     If *paths* is given (relative to worktree), only those paths are
     restored.  Otherwise the full commit is checked out.
     """
+    cwd, git_dir = _backup_cwd(backup_path)
     if paths:
-        _run(["checkout", commit_hash, "--"] + list(paths), cwd=backup_path)
+        _run(["checkout", commit_hash, "--"] + list(paths), cwd=cwd, git_dir=git_dir)
     else:
-        _run(["checkout", commit_hash, "--", "."], cwd=backup_path)
+        _run(["checkout", commit_hash, "--", "."], cwd=cwd, git_dir=git_dir)
     logger.info("Checked out backup %s", commit_hash[:8])
 
 
@@ -239,7 +276,8 @@ def backup_log(backup_path, max_count=50):
 
 def backup_files_at(backup_path, commit_hash):
     """List files present at a specific backup commit."""
-    output = _run(["ls-tree", "-r", "--name-only", commit_hash], cwd=backup_path)
+    cwd, git_dir = _backup_cwd(backup_path)
+    output = _run(["ls-tree", "-r", "--name-only", commit_hash], cwd=cwd, git_dir=git_dir)
     return [f for f in output.splitlines() if f.strip()]
 
 
@@ -250,10 +288,14 @@ def backup_file_content(backup_path, commit_hash, file_path):
 
 def backup_archive(backup_path, commit_hash):
     """Create a ZIP archive of a backup commit. Returns bytes."""
-    cmd = [GIT_BIN, "archive", "--format=zip", commit_hash]
+    cwd, git_dir = _backup_cwd(backup_path)
+    cmd = [GIT_BIN]
+    if git_dir:
+        cmd.extend(["--git-dir", git_dir])
+    cmd.extend(["archive", "--format=zip", commit_hash])
     result = subprocess.run(
         cmd,
-        cwd=backup_path,
+        cwd=cwd,
         capture_output=True,
         timeout=60,
     )

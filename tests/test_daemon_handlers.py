@@ -641,14 +641,20 @@ class TestLoadSettingsFromDisk:
             "referenceRepoUrl": "https://example.com/repo.git",
             "activeBranch": "3.5",
         }))
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             result = daemon.load_settings_from_disk()
         assert result["referenceRepoUrl"] == "https://example.com/repo.git"
         assert result["activeBranch"] == "3.5"
 
     def test_returns_empty_dict_when_file_missing(self, tmp_path):
         daemon = _import_daemon()
-        with patch.object(daemon, "SETTINGS_FILE", str(tmp_path / "missing.json")):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(tmp_path / "missing.json")),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             result = daemon.load_settings_from_disk()
         assert result == {}
 
@@ -656,7 +662,10 @@ class TestLoadSettingsFromDisk:
         daemon = _import_daemon()
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("not valid json{")
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             result = daemon.load_settings_from_disk()
         assert result == {}
 
@@ -667,7 +676,10 @@ class TestLoadSettingsFromDisk:
             "referenceRepoUrl": "url",
             "badKey": "should be filtered",
         }))
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             result = daemon.load_settings_from_disk()
         assert "referenceRepoUrl" in result
         assert "badKey" not in result
@@ -676,16 +688,59 @@ class TestLoadSettingsFromDisk:
         daemon = _import_daemon()
         settings_file = tmp_path / "settings.json"
         settings_file.write_text(json.dumps(["not", "a", "dict"]))
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             result = daemon.load_settings_from_disk()
         assert result == {}
+
+    def test_falls_back_to_legacy_settings(self, tmp_path):
+        """When primary settings file is missing, loads from legacy location."""
+        daemon = _import_daemon()
+        legacy_file = tmp_path / "legacy" / "settings.json"
+        legacy_file.parent.mkdir()
+        legacy_file.write_text(json.dumps({
+            "referenceRepoUrl": "https://legacy.example.com/repo.git",
+            "status": "up_to_date",
+        }))
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(tmp_path / "missing.json")),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(legacy_file)),
+        ):
+            result = daemon.load_settings_from_disk()
+        assert result["referenceRepoUrl"] == "https://legacy.example.com/repo.git"
+        assert result["status"] == "up_to_date"
+
+    def test_primary_takes_precedence_over_legacy(self, tmp_path):
+        """When both primary and legacy exist, primary wins."""
+        daemon = _import_daemon()
+        primary_file = tmp_path / "primary" / "settings.json"
+        primary_file.parent.mkdir()
+        primary_file.write_text(json.dumps({
+            "referenceRepoUrl": "https://primary.example.com/repo.git",
+        }))
+        legacy_file = tmp_path / "legacy" / "settings.json"
+        legacy_file.parent.mkdir()
+        legacy_file.write_text(json.dumps({
+            "referenceRepoUrl": "https://legacy.example.com/repo.git",
+        }))
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(primary_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(legacy_file)),
+        ):
+            result = daemon.load_settings_from_disk()
+        assert result["referenceRepoUrl"] == "https://primary.example.com/repo.git"
 
 
 class TestSaveSettingsToDisk:
     def test_saves_persisted_keys(self, tmp_path):
         daemon = _import_daemon()
         settings_file = tmp_path / "settings.json"
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             daemon.save_settings_to_disk({
                 "referenceRepoUrl": "https://example.com/repo.git",
                 "firmwareBranchOverride": "custom",
@@ -701,7 +756,10 @@ class TestSaveSettingsToDisk:
             "referenceRepoUrl": "https://old.example.com/repo.git",
             "activeBranch": "3.5",
         }))
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             daemon.save_settings_to_disk({"activeBranch": "3.6"})
         data = json.loads(settings_file.read_text())
         assert data["referenceRepoUrl"] == "https://old.example.com/repo.git"
@@ -710,7 +768,10 @@ class TestSaveSettingsToDisk:
     def test_ignores_unknown_keys(self, tmp_path):
         daemon = _import_daemon()
         settings_file = tmp_path / "settings.json"
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             daemon.save_settings_to_disk({
                 "referenceRepoUrl": "url",
                 "unknownKey": "should not appear",
@@ -722,16 +783,92 @@ class TestSaveSettingsToDisk:
     def test_creates_parent_directories(self, tmp_path):
         daemon = _import_daemon()
         settings_file = tmp_path / "subdir" / "settings.json"
-        with patch.object(daemon, "SETTINGS_FILE", str(settings_file)):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", str(settings_file)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             daemon.save_settings_to_disk({"referenceRepoUrl": "url"})
         assert settings_file.exists()
 
     def test_handles_write_failure_gracefully(self, tmp_path):
         daemon = _import_daemon()
         # Use a path that cannot be written (read-only dir)
-        with patch.object(daemon, "SETTINGS_FILE", "/proc/nonexistent/settings.json"):
+        with (
+            patch.object(daemon, "SETTINGS_FILE", "/proc/nonexistent/settings.json"),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(tmp_path / "no-legacy.json")),
+        ):
             # Should not raise
             daemon.save_settings_to_disk({"referenceRepoUrl": "url"})
+
+
+class TestMigrateLegacyData:
+    """Tests for _migrate_legacy_data — moves data from plugin dir to persistent dir."""
+
+    def test_migrates_settings_from_old_location(self, tmp_path):
+        daemon = _import_daemon()
+        old_plugin_dir = tmp_path / "plugins" / "MeltingplotConfig"
+        old_plugin_dir.mkdir(parents=True)
+        new_data_dir = tmp_path / "sd" / "sys" / "MeltingplotConfig"
+
+        # Create legacy settings file
+        old_settings = old_plugin_dir / "settings.json"
+        old_settings.write_text(json.dumps({"referenceRepoUrl": "https://example.com"}))
+
+        new_settings = new_data_dir / "settings.json"
+
+        with (
+            patch.object(daemon, "PLUGIN_DIR", str(old_plugin_dir)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(old_settings)),
+            patch.object(daemon, "SETTINGS_FILE", str(new_settings)),
+            patch.object(daemon, "DATA_DIR", str(new_data_dir)),
+        ):
+            daemon._migrate_legacy_data()
+
+        assert new_settings.exists()
+        assert not old_settings.exists()
+        data = json.loads(new_settings.read_text())
+        assert data["referenceRepoUrl"] == "https://example.com"
+
+    def test_skips_migration_when_no_legacy_data(self, tmp_path):
+        daemon = _import_daemon()
+        old_plugin_dir = tmp_path / "plugins" / "MeltingplotConfig"
+        old_plugin_dir.mkdir(parents=True)
+        new_data_dir = tmp_path / "sd" / "sys" / "MeltingplotConfig"
+
+        with (
+            patch.object(daemon, "PLUGIN_DIR", str(old_plugin_dir)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(old_plugin_dir / "settings.json")),
+            patch.object(daemon, "SETTINGS_FILE", str(new_data_dir / "settings.json")),
+            patch.object(daemon, "DATA_DIR", str(new_data_dir)),
+        ):
+            daemon._migrate_legacy_data()
+
+        assert not (new_data_dir / "settings.json").exists()
+
+    def test_skips_migration_when_destination_exists(self, tmp_path):
+        daemon = _import_daemon()
+        old_plugin_dir = tmp_path / "plugins" / "MeltingplotConfig"
+        old_plugin_dir.mkdir(parents=True)
+        new_data_dir = tmp_path / "sd" / "sys" / "MeltingplotConfig"
+        new_data_dir.mkdir(parents=True)
+
+        # Both old and new settings exist
+        old_settings = old_plugin_dir / "settings.json"
+        old_settings.write_text(json.dumps({"referenceRepoUrl": "https://old.example.com"}))
+        new_settings = new_data_dir / "settings.json"
+        new_settings.write_text(json.dumps({"referenceRepoUrl": "https://new.example.com"}))
+
+        with (
+            patch.object(daemon, "PLUGIN_DIR", str(old_plugin_dir)),
+            patch.object(daemon, "_LEGACY_SETTINGS_FILE", str(old_settings)),
+            patch.object(daemon, "SETTINGS_FILE", str(new_settings)),
+            patch.object(daemon, "DATA_DIR", str(new_data_dir)),
+        ):
+            daemon._migrate_legacy_data()
+
+        # New file should not be overwritten
+        data = json.loads(new_settings.read_text())
+        assert data["referenceRepoUrl"] == "https://new.example.com"
 
 
 class TestHandleSyncPersistence:

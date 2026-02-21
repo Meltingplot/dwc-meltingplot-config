@@ -103,6 +103,8 @@ class TestMainStartup:
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[]),
             patch.object(daemon, "load_settings_from_disk", return_value=persisted),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -131,6 +133,8 @@ class TestMainStartup:
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[]),
             patch.object(daemon, "load_settings_from_disk", return_value=persisted),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -154,6 +158,8 @@ class TestMainStartup:
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[]),
             patch.object(daemon, "load_settings_from_disk", return_value={}),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -177,6 +183,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -202,6 +210,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -228,6 +238,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -256,6 +268,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -288,6 +302,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -310,6 +326,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -332,6 +350,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager"),
             patch.object(daemon, "register_endpoints", return_value=[ep1, ep2]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -358,6 +378,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()
@@ -387,6 +409,8 @@ class TestMainStartup:
             patch.object(daemon, "CommandConnection", return_value=cmd),
             patch.object(daemon, "ConfigManager") as MockManager,
             patch.object(daemon, "register_endpoints", return_value=[]),
+            patch.object(daemon, "_migrate_legacy_data"),
+            patch.object(daemon.os, "makedirs"),
             patch("time.sleep", side_effect=KeyboardInterrupt),
         ):
             daemon.main()

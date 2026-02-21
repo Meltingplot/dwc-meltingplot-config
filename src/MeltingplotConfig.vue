@@ -162,6 +162,7 @@ export default {
       syncing: false,
       loadingDiff: false,
       loadingBackups: false,
+      backupsLoaded: false,
       savingSettings: false,
       diffFiles: [],
       backups: [],
@@ -213,6 +214,11 @@ export default {
     }
   },
   watch: {
+    activeTab(val) {
+      if (val === 2 && !this.backupsLoaded) {
+        this.loadBackups()
+      }
+    },
     pluginData: {
       handler(val) {
         this.settings.referenceRepoUrl = val.referenceRepoUrl
@@ -298,6 +304,7 @@ export default {
       try {
         const data = await this.apiGet('/backups')
         this.backups = data.backups || []
+        this.backupsLoaded = true
       } catch (err) {
         this.notify('Failed to load backups: ' + err.message, 'error')
       } finally {

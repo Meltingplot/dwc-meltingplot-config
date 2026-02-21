@@ -126,6 +126,7 @@ Our testing strategy fills this gap with four layers:
 ### Frontend (JavaScript)
 
 - **Framework:** Jest 29 + @vue/test-utils 1.x (Vue 2)
+- **Install:** `npm install` (installs devDependencies including Jest)
 - **Run:** `npm test`
 - **Test files (in `tests/frontend/`):**
   - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events

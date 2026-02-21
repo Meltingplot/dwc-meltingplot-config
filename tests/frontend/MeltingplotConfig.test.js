@@ -203,6 +203,53 @@ describe('MeltingplotConfig', () => {
             // Should not throw, branches remain empty
             expect(wrapper.vm.availableBranches).toEqual([]);
         });
+
+        it('auto-loads diff when referenceRepoUrl is configured', async () => {
+            mockFetchSuccess({
+                branches: ['main'],
+                referenceRepoUrl: 'https://example.com/repo.git',
+                status: 'up_to_date'
+            });
+            const wrapper = mountComponent();
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+            // loadStatus should have triggered loadDiff
+            const diffCalls = global.fetch.mock.calls.filter(c => c[0].includes('/diff'));
+            expect(diffCalls.length).toBeGreaterThan(0);
+        });
+
+        it('does not load diff when referenceRepoUrl is empty', async () => {
+            mockFetchSuccess({
+                branches: ['main'],
+                referenceRepoUrl: '',
+                status: 'not_configured'
+            });
+            const wrapper = mountComponent();
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+            // No diff call should have been made
+            const diffCalls = global.fetch.mock.calls.filter(c => c[0].includes('/diff'));
+            expect(diffCalls.length).toBe(0);
+        });
+
+        it('populates diffFiles on startup when repo is configured', async () => {
+            const files = [
+                { file: 'sys/config.g', status: 'modified', hunks: [] },
+                { file: 'sys/homex.g', status: 'unchanged', hunks: [] }
+            ];
+            // Mock returns the same response for all calls; loadDiff
+            // will parse `files` from it.
+            mockFetchSuccess({
+                branches: ['main'],
+                referenceRepoUrl: 'https://example.com/repo.git',
+                status: 'up_to_date',
+                files
+            });
+            const wrapper = mountComponent();
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+            expect(wrapper.vm.diffFiles).toEqual(files);
+        });
     });
 
     describe('checkForUpdates', () => {

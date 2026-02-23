@@ -26,10 +26,22 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 
+const { execSync } = require('child_process');
+
 const ROOT = path.resolve(__dirname, '..');
 const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'));
-const version = pluginJson.version;
 const pluginId = pluginJson.id;
+
+// Compute version from git without modifying source files
+let version;
+try {
+    version = execSync('node scripts/version.js', { cwd: ROOT, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).split('\n')[0];
+} catch {
+    version = pluginJson.version;
+}
+// Build a stamped plugin.json for the ZIP (don't modify source file)
+const stampedPluginJson = { ...pluginJson, version };
+console.log(`Building version ${version}`);
 
 const DIST_DIR = path.join(ROOT, 'dist');
 const ZIP_NAME = `${pluginId}-${version}.zip`;
@@ -53,8 +65,8 @@ archive.on('error', (err) => {
 
 archive.pipe(output);
 
-// plugin.json at root
-archive.file(path.join(ROOT, 'plugin.json'), { name: 'plugin.json' });
+// plugin.json at root (with computed version)
+archive.append(JSON.stringify(stampedPluginJson, null, 2) + '\n', { name: 'plugin.json' });
 
 // dsf/ — Python backend files
 const dsfDir = path.join(ROOT, 'dsf');

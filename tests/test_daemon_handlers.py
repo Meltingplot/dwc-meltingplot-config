@@ -603,16 +603,18 @@ class TestFirmwareDetection:
 
 
 class TestBoardStateMonkeyPatch:
-    """Tests for the Board.state monkey-patch that handles unknown BoardState
-    values (e.g. 'timedOut') without crashing get_object_model()."""
+    """Tests for the BoardState replacement and Board.state setter patch."""
 
     @staticmethod
-    def _make_board_and_enum():
-        """Create a mock BoardState enum + Board class matching dsf-python."""
+    def _make_original():
+        """Create mock Board + BoardState matching dsf-python (without timedOut)."""
         from enum import Enum
 
         class BoardState(str, Enum):
             unknown = "unknown"
+            flashing = "flashing"
+            flashFailed = "flashFailed"
+            resetting = "resetting"
             running = "running"
 
         class Board:
@@ -635,85 +637,83 @@ class TestBoardStateMonkeyPatch:
         return Board, BoardState
 
     @staticmethod
-    def _apply_enum_extension(BoardState, names):
-        """Replicate the daemon's enum-extension monkey-patch."""
-        for name in names:
-            if name not in BoardState._value2member_map_:
-                member = str.__new__(BoardState, name)
-                member._name_ = name
-                member._value_ = name
-                BoardState._value2member_map_[name] = member
-                BoardState._member_map_[name] = member
-                type.__setattr__(BoardState, name, member)
+    def _make_patched():
+        """Create the replacement BoardState (with timedOut) and patched Board."""
+        from enum import Enum
 
-    @staticmethod
-    def _apply_setter_safety_net(Board, BoardState):
-        """Replicate the daemon's setter safety-net monkey-patch."""
-        original_fset = Board.state.fset
+        class PatchedBoardState(str, Enum):
+            unknown = "unknown"
+            flashing = "flashing"
+            flashFailed = "flashFailed"
+            resetting = "resetting"
+            running = "running"
+            timedOut = "timedOut"
 
-        def safe_setter(self, value):
-            try:
-                original_fset(self, value)
-            except (ValueError, KeyError):
-                self._state = BoardState.unknown
+        class Board:
+            def __init__(self):
+                self._state = PatchedBoardState.unknown
 
-        Board.state = Board.state.setter(safe_setter)
+            @property
+            def state(self):
+                return self._state
 
-    def test_unpatched_raises_on_unknown_value(self):
-        """Without any patch, an unknown value crashes the setter."""
-        Board, BoardState = self._make_board_and_enum()
+            @state.setter
+            def state(self, value):
+                try:
+                    if value is None or isinstance(value, PatchedBoardState):
+                        self._state = value
+                    elif isinstance(value, str):
+                        self._state = PatchedBoardState(value)
+                    else:
+                        raise TypeError(f"invalid type for Board.state: {type(value)}")
+                except (ValueError, KeyError):
+                    self._state = PatchedBoardState.unknown
+
+        return Board, PatchedBoardState
+
+    def test_original_raises_on_timed_out(self):
+        """Without patch, 'timedOut' crashes the setter."""
+        Board, _ = self._make_original()
         board = Board()
         with pytest.raises(ValueError):
             board.state = "timedOut"
 
-    def test_enum_extension_adds_timed_out(self):
-        """After extending the enum, 'timedOut' is a valid BoardState."""
-        Board, BoardState = self._make_board_and_enum()
-        self._apply_enum_extension(BoardState, ["timedOut"])
-
-        assert BoardState("timedOut").value == "timedOut"
-        assert BoardState.timedOut == "timedOut"
-
+    def test_patched_accepts_timed_out(self):
+        """With replaced enum, 'timedOut' is a valid state."""
+        Board, BS = self._make_patched()
         board = Board()
         board.state = "timedOut"
-        assert board.state == BoardState.timedOut
+        assert board.state == BS.timedOut
+        assert board.state.value == "timedOut"
 
-    def test_enum_extension_preserves_existing_members(self):
-        """Extending the enum doesn't break existing members."""
-        Board, BoardState = self._make_board_and_enum()
-        self._apply_enum_extension(BoardState, ["timedOut"])
-
+    def test_patched_preserves_existing_members(self):
+        """All original states still work."""
+        Board, BS = self._make_patched()
         board = Board()
-        board.state = "running"
-        assert board.state == BoardState.running
+        for val in ("unknown", "flashing", "flashFailed", "resetting", "running"):
+            board.state = val
+            assert board.state == BS(val)
 
-    def test_setter_safety_net_falls_back_on_totally_unknown(self):
-        """The setter safety net catches values not even in the extension."""
-        Board, BoardState = self._make_board_and_enum()
-        self._apply_enum_extension(BoardState, ["timedOut"])
-        self._apply_setter_safety_net(Board, BoardState)
-
+    def test_patched_safety_net_for_future_unknown(self):
+        """Completely unknown values fall back to unknown."""
+        Board, BS = self._make_patched()
         board = Board()
         board.state = "someFutureState"
-        assert board.state == BoardState.unknown
+        assert board.state == BS.unknown
 
-    def test_full_patch_accepts_none(self):
-        """The fully patched setter still accepts None."""
-        Board, BoardState = self._make_board_and_enum()
-        self._apply_enum_extension(BoardState, ["timedOut"])
-        self._apply_setter_safety_net(Board, BoardState)
-
+    def test_patched_accepts_none(self):
+        """None is still accepted."""
+        Board, _ = self._make_patched()
         board = Board()
         board.state = None
         assert board.state is None
 
-    def test_enum_extension_is_idempotent(self):
-        """Calling the extension twice doesn't duplicate or crash."""
-        _, BoardState = self._make_board_and_enum()
-        self._apply_enum_extension(BoardState, ["timedOut"])
-        self._apply_enum_extension(BoardState, ["timedOut"])
-
-        assert BoardState("timedOut").value == "timedOut"
+    def test_patched_accepts_enum_member_directly(self):
+        """Passing an enum member directly works."""
+        Board, BS = self._make_patched()
+        board = Board()
+        board.state = BS.timedOut
+        assert board.state == BS.timedOut
 
 
 class TestBuildDirectoryMap:

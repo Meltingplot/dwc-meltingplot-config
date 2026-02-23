@@ -41,34 +41,38 @@ except ImportError:
 # Board.state setter calls BoardState(value) which raises ValueError for
 # unrecognised values, crashing get_object_model() entirely.
 #
-# Fix: (a) extend BoardState with known-missing members so they deserialise
-# correctly, and (b) patch the Board.state setter as a safety net for any
-# future unknown values — falling back to BoardState.unknown.
+# Fix: replace the entire BoardState enum with one that includes the missing
+# members, and patch the Board.state setter as a safety net for any future
+# unknown values.
 try:
-    from dsf.object_model.boards.boards import Board as _Board, BoardState as _BS
+    import dsf.object_model.boards.boards as _boards_mod
+    from dsf.object_model.boards.boards import Board as _Board
+    from enum import Enum
 
-    # (a) Add missing enum members that DSF reports but dsf-python omits.
-    #     We update _value2member_map_ (for value→member lookup) and
-    #     _member_map_ (for name→member lookup), then use type.__setattr__
-    #     to inject the attribute directly — bypassing EnumMeta.__setattr__
-    #     which blocks writes to names already in _member_map_.
-    for _name in ("timedOut",):
-        if _name not in _BS._value2member_map_:
-            _member = str.__new__(_BS, _name)
-            _member._name_ = _name
-            _member._value_ = _name
-            _BS._value2member_map_[_name] = _member
-            _BS._member_map_[_name] = _member
-            type.__setattr__(_BS, _name, _member)
+    class _PatchedBoardState(str, Enum):
+        """Replacement BoardState that includes all known DSF states."""
+        unknown = "unknown"
+        flashing = "flashing"
+        flashFailed = "flashFailed"
+        resetting = "resetting"
+        running = "running"
+        timedOut = "timedOut"
 
-    # (b) Safety net: catch any remaining unknown values gracefully.
-    _original_state_fset = _Board.state.fset
+    # Replace the enum in the module so Board.state setter picks it up.
+    _boards_mod.BoardState = _PatchedBoardState
 
+    # Re-wire the Board.state setter to use the new enum, with a safety net
+    # for any future unknown values.
     def _safe_state_setter(self, value):
         try:
-            _original_state_fset(self, value)
+            if value is None or isinstance(value, _PatchedBoardState):
+                self._state = value
+            elif isinstance(value, str):
+                self._state = _PatchedBoardState(value)
+            else:
+                raise TypeError(f"invalid type for Board.state: {type(value)}")
         except (ValueError, KeyError):
-            self._state = _BS.unknown
+            self._state = _PatchedBoardState.unknown
 
     _Board.state = _Board.state.setter(_safe_state_setter)
 except ImportError:

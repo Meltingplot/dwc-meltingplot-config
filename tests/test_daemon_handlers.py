@@ -306,6 +306,53 @@ class TestHandleBackupDetailEdgeCases:
         assert len(body["files"]) == 2
 
 
+class TestHandleBackupFileContent:
+    def test_returns_content(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_content.return_value = {
+            "file": "sys/config.g", "status": "ok",
+            "content": "G28\nM584 X0 Y1\n",
+        }
+        resp = daemon.handle_backup_file_content(cmd, manager, "", {"hash": "abc", "file": "sys/config.g"})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert body["status"] == "ok"
+        assert body["content"] == "G28\nM584 X0 Y1\n"
+
+    def test_missing_hash(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_backup_file_content(MagicMock(), MagicMock(), "", {"file": "x"})
+        assert resp["status"] == 400
+
+    def test_missing_file(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_backup_file_content(MagicMock(), MagicMock(), "", {"hash": "x"})
+        assert resp["status"] == 400
+
+    def test_url_decodes_file_path(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_content.return_value = {"file": "sys/config file.g", "status": "ok", "content": "test"}
+        daemon.handle_backup_file_content(cmd, manager, "", {"hash": "abc", "file": "sys/config%20file.g"})
+        manager.get_backup_file_content.assert_called_once_with("abc", "sys/config file.g")
+
+    def test_not_found_returns_ok(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.get_backup_file_content.return_value = {
+            "file": "sys/missing.g", "status": "not_found", "content": None,
+        }
+        resp = daemon.handle_backup_file_content(cmd, manager, "", {"hash": "abc", "file": "sys/missing.g"})
+        assert resp["status"] == 200
+        body = json.loads(resp["body"])
+        assert body["status"] == "not_found"
+        assert body["content"] is None
+
+
 class TestHandleBackupFileDiff:
     def test_returns_diff(self):
         daemon = _import_daemon()

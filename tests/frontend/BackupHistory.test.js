@@ -250,19 +250,85 @@ describe('BackupHistory', () => {
       global.fetch.mockRestore()
     })
 
-    it('clears selection when empty array', async () => {
+    it('clears selection and fileContent when empty array', async () => {
       const wrapper = mountComponent({ backups: sampleBackups })
       const backup = {
         ...sampleBackups[0],
         expanded: true,
         changedFiles: ['sys/config.g'],
         selectedFile: 'sys/config.g',
-        fileDiff: { file: 'sys/config.g', status: 'modified', hunks: [] }
+        fileDiff: { file: 'sys/config.g', status: 'modified', hunks: [] },
+        fileContent: { file: 'sys/config.g', status: 'ok', content: 'G28\n' }
       }
 
       await wrapper.vm.onFileSelected(backup, [])
       expect(backup.selectedFile).toBeNull()
       expect(backup.fileDiff).toBeNull()
+      expect(backup.fileContent).toBeNull()
+    })
+
+    it('fetches content for full backup file selection', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = {
+        ...sampleBackups[0],
+        isFullBackup: true,
+        expanded: true,
+        files: ['sys/config.g'],
+        changedFiles: [],
+        activeNodes: []
+      }
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            file: 'sys/config.g',
+            status: 'ok',
+            content: 'G28\nM584 X0 Y1\n'
+          })
+        })
+      )
+
+      await wrapper.vm.onFileSelected(backup, ['sys/config.g'])
+      expect(backup.selectedFile).toBe('sys/config.g')
+      expect(backup.viewMode).toBe('content')
+      expect(backup.fileContent).toBeTruthy()
+      expect(backup.fileContent.content).toBe('G28\nM584 X0 Y1\n')
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('backupFileContent')
+      )
+
+      global.fetch.mockRestore()
+    })
+
+    it('defaults to diff mode for partial backups', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = {
+        ...sampleBackups[0],
+        isFullBackup: false,
+        expanded: true,
+        changedFiles: ['sys/config.g'],
+        activeNodes: []
+      }
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            file: 'sys/config.g',
+            status: 'modified',
+            hunks: []
+          })
+        })
+      )
+
+      await wrapper.vm.onFileSelected(backup, ['sys/config.g'])
+      expect(backup.viewMode).toBe('diff')
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('backupFileDiff')
+      )
+
+      global.fetch.mockRestore()
     })
 
     it('ignores folder selections', async () => {
@@ -294,6 +360,139 @@ describe('BackupHistory', () => {
       await wrapper.vm.onFileSelected(backup, ['sys/config.g'])
       expect(backup.fileDiff).toBeTruthy()
       expect(backup.fileDiff.status).toBe('error')
+
+      global.fetch.mockRestore()
+    })
+  })
+
+  describe('fetchFileContent', () => {
+    it('fetches and sets file content', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = { ...sampleBackups[0] }
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            file: 'sys/config.g',
+            status: 'ok',
+            content: 'G28\nM584 X0 Y1\n'
+          })
+        })
+      )
+
+      await wrapper.vm.fetchFileContent(backup, 'sys/config.g')
+      expect(backup.fileContent).toBeTruthy()
+      expect(backup.fileContent.status).toBe('ok')
+      expect(backup.fileContent.content).toBe('G28\nM584 X0 Y1\n')
+      expect(backup.loadingDiff).toBe(false)
+
+      global.fetch.mockRestore()
+    })
+
+    it('handles fetch errors gracefully', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = { ...sampleBackups[0] }
+
+      global.fetch = jest.fn(() => Promise.reject(new Error('network error')))
+      await wrapper.vm.fetchFileContent(backup, 'sys/config.g')
+      expect(backup.fileContent).toBeTruthy()
+      expect(backup.fileContent.status).toBe('not_found')
+      expect(backup.fileContent.content).toBeNull()
+
+      global.fetch.mockRestore()
+    })
+  })
+
+  describe('switchViewMode', () => {
+    it('switches to content mode and fetches content', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = {
+        ...sampleBackups[0],
+        selectedFile: 'sys/config.g',
+        viewMode: 'diff',
+        fileDiff: { file: 'sys/config.g', status: 'modified', hunks: [] }
+      }
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            file: 'sys/config.g',
+            status: 'ok',
+            content: 'G28\n'
+          })
+        })
+      )
+
+      await wrapper.vm.switchViewMode(backup, 'content')
+      expect(backup.viewMode).toBe('content')
+      expect(backup.fileContent).toBeTruthy()
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('backupFileContent')
+      )
+
+      global.fetch.mockRestore()
+    })
+
+    it('switches to diff mode and fetches diff', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = {
+        ...sampleBackups[0],
+        selectedFile: 'sys/config.g',
+        viewMode: 'content',
+        fileContent: { file: 'sys/config.g', status: 'ok', content: 'G28\n' }
+      }
+
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            file: 'sys/config.g',
+            status: 'modified',
+            hunks: []
+          })
+        })
+      )
+
+      await wrapper.vm.switchViewMode(backup, 'diff')
+      expect(backup.viewMode).toBe('diff')
+      expect(backup.fileDiff).toBeTruthy()
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('backupFileDiff')
+      )
+
+      global.fetch.mockRestore()
+    })
+
+    it('does not re-fetch if data already loaded', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = {
+        ...sampleBackups[0],
+        selectedFile: 'sys/config.g',
+        viewMode: 'diff',
+        fileDiff: { file: 'sys/config.g', status: 'modified', hunks: [] },
+        fileContent: { file: 'sys/config.g', status: 'ok', content: 'G28\n' }
+      }
+
+      global.fetch = jest.fn()
+      await wrapper.vm.switchViewMode(backup, 'content')
+      expect(global.fetch).not.toHaveBeenCalled()
+      expect(backup.viewMode).toBe('content')
+
+      await wrapper.vm.switchViewMode(backup, 'diff')
+      expect(global.fetch).not.toHaveBeenCalled()
+
+      global.fetch.mockRestore()
+    })
+
+    it('does nothing without selectedFile', async () => {
+      const wrapper = mountComponent({ backups: sampleBackups })
+      const backup = { ...sampleBackups[0], selectedFile: null }
+
+      global.fetch = jest.fn()
+      await wrapper.vm.switchViewMode(backup, 'content')
+      expect(global.fetch).not.toHaveBeenCalled()
 
       global.fetch.mockRestore()
     })

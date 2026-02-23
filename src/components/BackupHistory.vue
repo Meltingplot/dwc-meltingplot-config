@@ -92,73 +92,123 @@
                   </v-treeview>
                 </v-col>
 
-                <!-- Diff viewer (right) -->
+                <!-- File viewer (right) -->
                 <v-col cols="9" class="backup-diff-col">
                   <div v-if="backup.loadingDiff" class="text-center pa-8">
                     <v-progress-circular indeterminate size="24" />
-                    <div class="mt-2 caption">Loading diff...</div>
+                    <div class="mt-2 caption">Loading...</div>
                   </div>
 
-                  <div v-else-if="backup.fileDiff" class="backup-diff-viewer">
+                  <div v-else-if="backup.fileDiff || backup.fileContent" class="backup-diff-viewer">
                     <div class="backup-diff-file-header d-flex align-center pa-2">
                       <v-icon small class="mr-2">mdi-file-document-outline</v-icon>
                       <code class="backup-diff-filename">{{ backup.selectedFile }}</code>
-                      <v-chip x-small class="ml-2" :color="diffStatusColor(backup.fileDiff.status)" outlined>
+                      <v-chip
+                        v-if="backup.fileDiff && backup.viewMode === 'diff'"
+                        x-small class="ml-2"
+                        :color="diffStatusColor(backup.fileDiff.status)" outlined
+                      >
                         {{ backup.fileDiff.status }}
                       </v-chip>
+                      <v-spacer />
+                      <v-btn-toggle
+                        :value="backup.viewMode || 'diff'"
+                        dense mandatory class="mr-1"
+                        @change="switchViewMode(backup, $event)"
+                      >
+                        <v-btn x-small value="content" title="File content">
+                          <v-icon x-small class="mr-1">mdi-file-document</v-icon>
+                          Content
+                        </v-btn>
+                        <v-btn x-small value="diff" title="Changes diff">
+                          <v-icon x-small class="mr-1">mdi-file-compare</v-icon>
+                          Diff
+                        </v-btn>
+                      </v-btn-toggle>
                     </div>
 
-                    <div v-if="backup.fileDiff.hunks && backup.fileDiff.hunks.length > 0" class="diff-file-block">
-                      <table class="diff-table">
-                        <colgroup>
-                          <col class="col-linenum">
-                          <col class="col-content">
-                          <col class="col-linenum">
-                          <col class="col-content">
-                        </colgroup>
-                        <thead>
-                          <tr>
-                            <th class="diff-col-header diff-col-linenum diff-col-left" />
-                            <th class="diff-col-header diff-col-left">Before</th>
-                            <th class="diff-col-header diff-col-linenum diff-col-right" />
-                            <th class="diff-col-header diff-col-right">After</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <template v-for="hunk in backup.fileDiff.hunks">
-                            <tr :key="'bsep-' + backup.hash + '-' + hunk.index" class="hunk-separator-row">
-                              <td colspan="4" class="hunk-separator">
-                                <div class="d-flex align-center">
-                                  <v-icon x-small class="mr-1 hunk-fold-icon">mdi-dots-vertical</v-icon>
-                                  <code class="hunk-range">{{ hunk.header }}</code>
-                                  <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
-                                </div>
-                              </td>
-                            </tr>
+                    <!-- Content view -->
+                    <div v-if="(backup.viewMode || 'diff') === 'content'" class="file-content-block">
+                      <div v-if="backup.loadingContent" class="text-center pa-8">
+                        <v-progress-circular indeterminate size="24" />
+                        <div class="mt-2 caption">Loading file content...</div>
+                      </div>
+                      <div v-else-if="backup.fileContent && backup.fileContent.content !== null">
+                        <table class="content-table">
+                          <tbody>
                             <tr
-                              v-for="(row, i) in sideBySideLines(hunk)"
-                              :key="'bline-' + backup.hash + '-' + hunk.index + '-' + i"
+                              v-for="(line, i) in backup.fileContent.content.split('\n')"
+                              :key="'cline-' + backup.hash + '-' + i"
                             >
-                              <td :class="['diff-linenum', row.leftClass]">
-                                <code v-if="row.leftLine !== null">{{ row.leftLine }}</code>
+                              <td class="content-linenum">
+                                <code>{{ i + 1 }}</code>
                               </td>
-                              <td :class="['diff-cell', row.leftClass]">
-                                <code v-if="row.left !== null">{{ row.left }}</code>
-                              </td>
-                              <td :class="['diff-linenum', row.rightClass]">
-                                <code v-if="row.rightLine !== null">{{ row.rightLine }}</code>
-                              </td>
-                              <td :class="['diff-cell', row.rightClass]">
-                                <code v-if="row.right !== null">{{ row.right }}</code>
+                              <td class="content-cell">
+                                <code>{{ line }}</code>
                               </td>
                             </tr>
-                          </template>
-                        </tbody>
-                      </table>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div v-else class="text-center pa-8 caption grey--text">
+                        File not found in this backup.
+                      </div>
                     </div>
 
-                    <div v-else class="text-center pa-8 caption grey--text">
-                      No changes in this file.
+                    <!-- Diff view -->
+                    <div v-else-if="backup.fileDiff">
+                      <div v-if="backup.fileDiff.hunks && backup.fileDiff.hunks.length > 0" class="diff-file-block">
+                        <table class="diff-table">
+                          <colgroup>
+                            <col class="col-linenum">
+                            <col class="col-content">
+                            <col class="col-linenum">
+                            <col class="col-content">
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th class="diff-col-header diff-col-linenum diff-col-left" />
+                              <th class="diff-col-header diff-col-left">Before</th>
+                              <th class="diff-col-header diff-col-linenum diff-col-right" />
+                              <th class="diff-col-header diff-col-right">After</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <template v-for="hunk in backup.fileDiff.hunks">
+                              <tr :key="'bsep-' + backup.hash + '-' + hunk.index" class="hunk-separator-row">
+                                <td colspan="4" class="hunk-separator">
+                                  <div class="d-flex align-center">
+                                    <v-icon x-small class="mr-1 hunk-fold-icon">mdi-dots-vertical</v-icon>
+                                    <code class="hunk-range">{{ hunk.header }}</code>
+                                    <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr
+                                v-for="(row, i) in sideBySideLines(hunk)"
+                                :key="'bline-' + backup.hash + '-' + hunk.index + '-' + i"
+                              >
+                                <td :class="['diff-linenum', row.leftClass]">
+                                  <code v-if="row.leftLine !== null">{{ row.leftLine }}</code>
+                                </td>
+                                <td :class="['diff-cell', row.leftClass]">
+                                  <code v-if="row.left !== null">{{ row.left }}</code>
+                                </td>
+                                <td :class="['diff-linenum', row.rightClass]">
+                                  <code v-if="row.rightLine !== null">{{ row.rightLine }}</code>
+                                </td>
+                                <td :class="['diff-cell', row.rightClass]">
+                                  <code v-if="row.right !== null">{{ row.right }}</code>
+                                </td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div v-else class="text-center pa-8 caption grey--text">
+                        No changes in this file.
+                      </div>
                     </div>
                   </div>
 
@@ -233,6 +283,7 @@ export default {
       this.$set(backup, 'activeNodes', [])
       this.$set(backup, 'selectedFile', null)
       this.$set(backup, 'fileDiff', null)
+      this.$set(backup, 'fileContent', null)
       try {
         const response = await fetch(`${API_BASE}/backup?hash=${encodeURIComponent(backup.hash)}`)
         if (!response.ok) throw new Error(response.statusText)
@@ -300,29 +351,69 @@ export default {
       if (!activeIds || activeIds.length === 0) {
         this.$set(backup, 'selectedFile', null)
         this.$set(backup, 'fileDiff', null)
+        this.$set(backup, 'fileContent', null)
         return
       }
 
       const selectedId = activeIds[0]
-      // Only fetch diff for leaf nodes (actual files, not folders)
+      // Only fetch for leaf nodes (actual files, not folders)
       const fileList = this.displayFiles(backup)
       if (!fileList.includes(selectedId)) {
         return
       }
 
       this.$set(backup, 'selectedFile', selectedId)
-      this.$set(backup, 'loadingDiff', true)
       this.$set(backup, 'fileDiff', null)
+      this.$set(backup, 'fileContent', null)
+
+      // Default view mode: content for full backups, diff for partial
+      const defaultMode = backup.isFullBackup ? 'content' : 'diff'
+      this.$set(backup, 'viewMode', defaultMode)
+
+      if (defaultMode === 'content') {
+        await this.fetchFileContent(backup, selectedId)
+      } else {
+        await this.fetchFileDiff(backup, selectedId)
+      }
+    },
+
+    async fetchFileDiff(backup, filePath) {
+      this.$set(backup, 'loadingDiff', true)
       try {
-        const url = `${API_BASE}/backupFileDiff?hash=${encodeURIComponent(backup.hash)}&file=${encodeURIComponent(selectedId)}`
+        const url = `${API_BASE}/backupFileDiff?hash=${encodeURIComponent(backup.hash)}&file=${encodeURIComponent(filePath)}`
         const response = await fetch(url)
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
         this.$set(backup, 'fileDiff', data)
       } catch {
-        this.$set(backup, 'fileDiff', { file: selectedId, status: 'error', hunks: [] })
+        this.$set(backup, 'fileDiff', { file: filePath, status: 'error', hunks: [] })
       } finally {
         this.$set(backup, 'loadingDiff', false)
+      }
+    },
+
+    async fetchFileContent(backup, filePath) {
+      this.$set(backup, 'loadingDiff', true)
+      try {
+        const url = `${API_BASE}/backupFileContent?hash=${encodeURIComponent(backup.hash)}&file=${encodeURIComponent(filePath)}`
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(response.statusText)
+        const data = await response.json()
+        this.$set(backup, 'fileContent', data)
+      } catch {
+        this.$set(backup, 'fileContent', { file: filePath, status: 'not_found', content: null })
+      } finally {
+        this.$set(backup, 'loadingDiff', false)
+      }
+    },
+
+    async switchViewMode(backup, mode) {
+      if (!backup.selectedFile) return
+      this.$set(backup, 'viewMode', mode)
+      if (mode === 'content' && !backup.fileContent) {
+        await this.fetchFileContent(backup, backup.selectedFile)
+      } else if (mode === 'diff' && !backup.fileDiff) {
+        await this.fetchFileDiff(backup, backup.selectedFile)
       }
     },
 
@@ -552,5 +643,45 @@ export default {
 .diff-cell.diff-empty {
   background-color: #f5f5f5;
   border-right: 1px solid #e0e0e0;
+}
+
+/* --- File content table --- */
+.file-content-block {
+  border-top: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+.content-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.content-linenum {
+  width: 56px;
+  padding: 1px 8px 1px 4px;
+  text-align: right;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+  border-right: 1px solid #e0e0e0;
+  background-color: #f5f5f5;
+  user-select: none;
+}
+.content-linenum code {
+  font-size: 0.8em;
+  color: #9e9e9e;
+  white-space: nowrap;
+}
+.content-cell {
+  padding: 1px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+  background-color: #fafafa;
+}
+.content-cell code {
+  white-space: pre;
+  font-size: inherit;
+  word-break: break-all;
+  color: #212121;
 }
 </style>

@@ -71,6 +71,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: plugin
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Checkout DuetWebControl
         uses: actions/checkout@v4
@@ -87,6 +89,10 @@ jobs:
       - name: Install DWC dependencies
         working-directory: DuetWebControl
         run: npm install
+
+      - name: Compute version from git
+        working-directory: plugin
+        run: node scripts/version.js --write
 
       - name: Build plugin
         working-directory: DuetWebControl

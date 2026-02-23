@@ -109,8 +109,10 @@ describe('Plugin manifest validation (DWC 3.6 compatibility)', () => {
 describe('Plugin ZIP structure', () => {
   it('produces a ZIP named <PluginId>-<version>.zip', () => {
     const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'))
-    const expected = `${pluginJson.id}-${pluginJson.version}.zip`
-    expect(path.basename(zipPath)).toBe(expected)
+    // version.js may append -dev.N so match the prefix + semver pattern
+    expect(path.basename(zipPath)).toMatch(
+      new RegExp(`^${pluginJson.id}-\\d+\\.\\d+\\.\\d+(-dev\\.\\d+)?\\.zip$`)
+    )
   })
 
   it('contains plugin.json at root', () => {

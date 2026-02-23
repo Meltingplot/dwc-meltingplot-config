@@ -36,6 +36,42 @@ try:
 except ImportError:
     pass  # dsf not installed (e.g. test environment)
 
+# Monkey-patch dsf-python: BoardState enum is missing values that DSF may
+# report (e.g. "timedOut" when an expansion board doesn't respond).  The
+# Board.state setter calls BoardState(value) which raises ValueError for
+# unrecognised values, crashing get_object_model() entirely.
+#
+# Fix: (a) extend BoardState with known-missing members so they deserialise
+# correctly, and (b) patch the Board.state setter as a safety net for any
+# future unknown values — falling back to BoardState.unknown.
+try:
+    from dsf.object_model.boards.boards import Board as _Board, BoardState as _BS
+
+    # (a) Add missing enum members that DSF reports but dsf-python omits.
+    #     Enum.__getattr__ uses _member_map_ for name lookups, so adding to
+    #     both maps is sufficient — setattr is not needed (and would fail
+    #     because Enum.__setattr__ blocks writes to existing member names).
+    for _name in ("timedOut",):
+        if _name not in _BS._value2member_map_:
+            _member = str.__new__(_BS, _name)
+            _member._name_ = _name
+            _member._value_ = _name
+            _BS._value2member_map_[_name] = _member
+            _BS._member_map_[_name] = _member
+
+    # (b) Safety net: catch any remaining unknown values gracefully.
+    _original_state_fset = _Board.state.fset
+
+    def _safe_state_setter(self, value):
+        try:
+            _original_state_fset(self, value)
+        except (ValueError, KeyError):
+            self._state = _BS.unknown
+
+    _Board.state = _Board.state.setter(_safe_state_setter)
+except ImportError:
+    pass  # dsf not installed (e.g. test environment)
+
 from config_manager import ConfigManager, DATA_DIR
 
 logging.basicConfig(

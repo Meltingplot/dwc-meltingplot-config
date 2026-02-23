@@ -80,6 +80,16 @@ These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at s
 
 **Workaround:** Extract the actual path via `getattr(response, "result", response)` after calling `cmd.resolve_path()`. The daemon does this in the path-resolution loop at startup.
 
+### 5. BoardState enum missing `timedOut` value
+
+**Bug:** `BoardState(str, Enum)` in `dsf.object_model.boards.boards` only defines `unknown`, `flashing`, `flashFailed`, `resetting`, `running`. DSF may report additional states (e.g. `timedOut` when an expansion board doesn't respond). The `Board.state` property setter calls `BoardState(value)` which raises `ValueError` for unrecognised values. This crashes `get_object_model()` entirely — the daemon loses firmware version detection and directory mappings.
+
+**Workaround (two-part):**
+1. **Enum replacement:** Replace the entire `BoardState` class in `dsf.object_model.boards.boards` with a new enum that includes all original members plus `timedOut`.
+2. **Setter safety net:** Replace `Board.state`'s setter with one that uses the new enum and catches `ValueError`/`KeyError`, falling back to `BoardState.unknown` for any future unknown values.
+
+**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+
 ## Development Setup
 
 ### Building the frontend

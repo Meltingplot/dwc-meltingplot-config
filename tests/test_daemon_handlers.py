@@ -602,6 +602,120 @@ class TestFirmwareDetection:
 # --- build_directory_map ---
 
 
+class TestBoardStateMonkeyPatch:
+    """Tests for the BoardState replacement and Board.state setter patch."""
+
+    @staticmethod
+    def _make_original():
+        """Create mock Board + BoardState matching dsf-python (without timedOut)."""
+        from enum import Enum
+
+        class BoardState(str, Enum):
+            unknown = "unknown"
+            flashing = "flashing"
+            flashFailed = "flashFailed"
+            resetting = "resetting"
+            running = "running"
+
+        class Board:
+            def __init__(self):
+                self._state = BoardState.unknown
+
+            @property
+            def state(self):
+                return self._state
+
+            @state.setter
+            def state(self, value):
+                if value is None or isinstance(value, BoardState):
+                    self._state = value
+                elif isinstance(value, str):
+                    self._state = BoardState(value)
+                else:
+                    raise TypeError(f"invalid type for state: {type(value)}")
+
+        return Board, BoardState
+
+    @staticmethod
+    def _make_patched():
+        """Create the replacement BoardState (with timedOut) and patched Board."""
+        from enum import Enum
+
+        class PatchedBoardState(str, Enum):
+            unknown = "unknown"
+            flashing = "flashing"
+            flashFailed = "flashFailed"
+            resetting = "resetting"
+            running = "running"
+            timedOut = "timedOut"
+
+        class Board:
+            def __init__(self):
+                self._state = PatchedBoardState.unknown
+
+            @property
+            def state(self):
+                return self._state
+
+            @state.setter
+            def state(self, value):
+                try:
+                    if value is None or isinstance(value, PatchedBoardState):
+                        self._state = value
+                    elif isinstance(value, str):
+                        self._state = PatchedBoardState(value)
+                    else:
+                        raise TypeError(f"invalid type for Board.state: {type(value)}")
+                except (ValueError, KeyError):
+                    self._state = PatchedBoardState.unknown
+
+        return Board, PatchedBoardState
+
+    def test_original_raises_on_timed_out(self):
+        """Without patch, 'timedOut' crashes the setter."""
+        Board, _ = self._make_original()
+        board = Board()
+        with pytest.raises(ValueError):
+            board.state = "timedOut"
+
+    def test_patched_accepts_timed_out(self):
+        """With replaced enum, 'timedOut' is a valid state."""
+        Board, BS = self._make_patched()
+        board = Board()
+        board.state = "timedOut"
+        assert board.state == BS.timedOut
+        assert board.state.value == "timedOut"
+
+    def test_patched_preserves_existing_members(self):
+        """All original states still work."""
+        Board, BS = self._make_patched()
+        board = Board()
+        for val in ("unknown", "flashing", "flashFailed", "resetting", "running"):
+            board.state = val
+            assert board.state == BS(val)
+
+    def test_patched_safety_net_for_future_unknown(self):
+        """Completely unknown values fall back to unknown."""
+        Board, BS = self._make_patched()
+        board = Board()
+        board.state = "someFutureState"
+        assert board.state == BS.unknown
+
+    def test_patched_accepts_none(self):
+        """None is still accepted."""
+        Board, _ = self._make_patched()
+        board = Board()
+        board.state = None
+        assert board.state is None
+
+    def test_patched_accepts_enum_member_directly(self):
+        """Passing an enum member directly works."""
+        Board, BS = self._make_patched()
+        board = Board()
+        board.state = BS.timedOut
+        assert board.state == BS.timedOut
+
+
 class TestBuildDirectoryMap:
     """Tests for build_directory_map which reads model.directories."""
 

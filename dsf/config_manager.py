@@ -545,6 +545,17 @@ class ConfigManager:
         """List files changed in a specific backup commit."""
         return backup_changed_files(BACKUP_DIR, commit_hash)
 
+    def get_backup_file_content(self, commit_hash, file_path):
+        """Get the full content of a file at a specific backup commit.
+
+        Returns a dict with ``file``, ``content``, and ``status``.
+        """
+        try:
+            content = backup_file_content(BACKUP_DIR, commit_hash, file_path)
+        except RuntimeError:
+            return {"file": file_path, "status": "not_found", "content": None}
+        return {"file": file_path, "status": "ok", "content": content}
+
     def get_backup_file_diff(self, commit_hash, file_path):
         """Get diff details for a specific file in a backup commit.
 

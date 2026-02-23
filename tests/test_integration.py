@@ -275,6 +275,29 @@ class TestSyncDiffApplyRoundTrip:
         files = env["manager"].get_backup_files(backups[0]["hash"])
         assert "sys/config.g" in files
 
+    def test_backup_file_content_returns_file(self, integration_env):
+        """get_backup_file_content should return full file content."""
+        env = integration_env
+        env["manager"].sync(env["repo_url"], "3.5")
+        env["manager"].apply_all()
+
+        backups = env["manager"].get_backups()
+        result = env["manager"].get_backup_file_content(backups[0]["hash"], "sys/config.g")
+        assert result["status"] == "ok"
+        assert result["content"] is not None
+        assert len(result["content"]) > 0
+
+    def test_backup_file_content_not_found(self, integration_env):
+        """get_backup_file_content should handle missing files."""
+        env = integration_env
+        env["manager"].sync(env["repo_url"], "3.5")
+        env["manager"].apply_all()
+
+        backups = env["manager"].get_backups()
+        result = env["manager"].get_backup_file_content(backups[0]["hash"], "nonexistent/file.g")
+        assert result["status"] == "not_found"
+        assert result["content"] is None
+
 
 class TestManualBackup:
     def test_manual_backup_creates_entry(self, integration_env):

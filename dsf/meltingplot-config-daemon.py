@@ -396,6 +396,18 @@ def handle_backup_download(_cmd, manager, _body, queries):
         return error_response(f"Download failed: {exc}", status=500)
 
 
+def handle_backup_file_content(_cmd, manager, _body, queries):
+    """GET /machine/MeltingplotConfig/backupFileContent?hash=<hash>&file=<path>"""
+    commit_hash = queries.get("hash", "")
+    if not commit_hash:
+        return error_response("Commit hash required (use ?hash= query param)")
+    file_param = queries.get("file", "")
+    if not file_param:
+        return error_response("File path required (use ?file= query param)")
+    result = manager.get_backup_file_content(commit_hash, unquote(file_param))
+    return json_response(result)
+
+
 def handle_backup_file_diff(_cmd, manager, _body, queries):
     """GET /machine/MeltingplotConfig/backupFileDiff?hash=<hash>&file=<path>"""
     commit_hash = queries.get("hash", "")
@@ -468,6 +480,7 @@ ENDPOINTS = {
     ("POST", "applyHunks"): handle_apply_hunks,
     ("GET", "backup"): handle_backup,
     ("GET", "backupDownload"): handle_backup_download,
+    ("GET", "backupFileContent"): handle_backup_file_content,
     ("GET", "backupFileDiff"): handle_backup_file_diff,
     ("POST", "restore"): handle_restore,
     ("POST", "deleteBackup"): handle_delete_backup,

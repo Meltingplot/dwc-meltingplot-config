@@ -48,9 +48,10 @@ try:
     from dsf.object_model.boards.boards import Board as _Board, BoardState as _BS
 
     # (a) Add missing enum members that DSF reports but dsf-python omits.
-    #     Enum.__getattr__ uses _member_map_ for name lookups, so adding to
-    #     both maps is sufficient — setattr is not needed (and would fail
-    #     because Enum.__setattr__ blocks writes to existing member names).
+    #     We update _value2member_map_ (for value→member lookup) and
+    #     _member_map_ (for name→member lookup), then use type.__setattr__
+    #     to inject the attribute directly — bypassing EnumMeta.__setattr__
+    #     which blocks writes to names already in _member_map_.
     for _name in ("timedOut",):
         if _name not in _BS._value2member_map_:
             _member = str.__new__(_BS, _name)
@@ -58,6 +59,7 @@ try:
             _member._value_ = _name
             _BS._value2member_map_[_name] = _member
             _BS._member_map_[_name] = _member
+            type.__setattr__(_BS, _name, _member)
 
     # (b) Safety net: catch any remaining unknown values gracefully.
     _original_state_fset = _Board.state.fset

@@ -644,6 +644,7 @@ class TestBoardStateMonkeyPatch:
                 member._value_ = name
                 BoardState._value2member_map_[name] = member
                 BoardState._member_map_[name] = member
+                type.__setattr__(BoardState, name, member)
 
     @staticmethod
     def _apply_setter_safety_net(Board, BoardState):

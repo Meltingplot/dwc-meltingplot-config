@@ -71,6 +71,7 @@ const STATUS_MAP = {
   not_configured: { color: 'grey', icon: 'mdi-help-circle', label: 'Not Configured' },
   up_to_date: { color: 'success', icon: 'mdi-check-circle', label: 'Up to Date' },
   updates_available: { color: 'warning', icon: 'mdi-alert-circle', label: 'Updates Available' },
+  sync_error: { color: 'error', icon: 'mdi-wifi-off', label: 'Sync Failed' },
   error: { color: 'error', icon: 'mdi-alert', label: 'Error' }
 }
 

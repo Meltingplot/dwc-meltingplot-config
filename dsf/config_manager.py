@@ -178,13 +178,21 @@ class ConfigManager:
     def sync(self, repo_url, firmware_version, branch_override=""):
         """Sync the reference repository and select the correct branch.
 
-        Returns a status dict.
+        Returns a status dict.  Network errors (e.g. no internet) are
+        caught and returned as ``{"error": ..., "networkError": True}``
+        so the caller can distinguish them from configuration errors.
         """
         if not repo_url:
             return {"error": "No reference repository URL configured"}
 
-        clone(repo_url, REFERENCE_DIR)
-        fetch(REFERENCE_DIR)
+        try:
+            clone(repo_url, REFERENCE_DIR)
+            fetch(REFERENCE_DIR)
+        except RuntimeError as exc:
+            msg = str(exc)
+            user_msg = _friendly_network_error(msg)
+            logger.warning("Sync failed (network): %s", msg)
+            return {"error": user_msg, "networkError": True}
 
         target_branch = branch_override or firmware_version
         if not target_branch:
@@ -198,7 +206,13 @@ class ConfigManager:
             }
 
         checkout(REFERENCE_DIR, branch)
-        pull(REFERENCE_DIR)
+        try:
+            pull(REFERENCE_DIR)
+        except RuntimeError as exc:
+            msg = str(exc)
+            user_msg = _friendly_network_error(msg)
+            logger.warning("Pull failed (network): %s", msg)
+            return {"error": user_msg, "networkError": True}
 
         warning = None
         if not exact:
@@ -714,3 +728,55 @@ def _hunk_summary(hunk):
     if start == end:
         return f"Line {start}"
     return f"Lines {start}-{end}"
+
+
+# --- Network error helpers ---
+
+# Patterns in git stderr that indicate a network/connectivity issue.
+_NETWORK_ERROR_PATTERNS = [
+    "Could not resolve host",
+    "unable to access",
+    "Connection refused",
+    "Connection timed out",
+    "Network is unreachable",
+    "No route to host",
+    "Failed to connect",
+    "Could not read from remote repository",
+    "The requested URL returned error",
+    "SSL",
+    "timed out",
+    "Connection reset",
+]
+
+
+def _friendly_network_error(raw_message):
+    """Convert a raw git error message into a user-friendly description.
+
+    If the message matches known network error patterns, returns a concise
+    explanation.  Otherwise returns the original message trimmed.
+    """
+    lower = raw_message.lower()
+
+    if "could not resolve host" in lower:
+        return "Cannot reach the repository server (DNS lookup failed). Check your internet connection."
+    if "connection refused" in lower:
+        return "Connection to the repository server was refused. The server may be down."
+    if "connection timed out" in lower or "timed out" in lower:
+        return "Connection to the repository timed out. Check your internet connection."
+    if "network is unreachable" in lower or "no route to host" in lower:
+        return "Network is unreachable. Check your internet connection."
+    if "unable to access" in lower or "failed to connect" in lower:
+        return "Cannot connect to the repository. Check your internet connection and repository URL."
+    if "could not read from remote repository" in lower:
+        return "Cannot read from the remote repository. Check the repository URL and your network connection."
+    if "ssl" in lower:
+        return "SSL/TLS error connecting to the repository. Check your network configuration."
+    if "connection reset" in lower:
+        return "Connection was reset by the server. Try again later."
+    if "the requested url returned error" in lower:
+        return "The repository server returned an error. Check the repository URL."
+
+    # Fallback: strip the "git <cmd> failed (rc=N): " prefix for cleaner display
+    if ": " in raw_message:
+        return raw_message.split(": ", 1)[1]
+    return raw_message

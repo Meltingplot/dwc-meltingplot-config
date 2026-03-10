@@ -250,6 +250,10 @@ def handle_sync(cmd, manager, _body, _queries):
 
     result = manager.sync(repo_url, fw_version, branch_override=override)
     if "error" in result:
+        # Update status to sync_error so the UI reflects the failure
+        new_status = "sync_error" if result.get("networkError") else "error"
+        set_plugin_data(cmd, "status", new_status)
+        save_settings_to_disk({"status": new_status})
         return error_response(result["error"])
 
     from datetime import datetime, timezone

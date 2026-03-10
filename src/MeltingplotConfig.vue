@@ -234,8 +234,7 @@ export default {
     async apiGet(path) {
       const response = await fetch(API_BASE + path)
       if (!response.ok) {
-        const text = await response.text()
-        throw new Error(text || response.statusText)
+        throw new Error(await this.extractErrorMessage(response))
       }
       return response.json()
     },
@@ -247,10 +246,18 @@ export default {
       }
       const response = await fetch(API_BASE + path, options)
       if (!response.ok) {
-        const text = await response.text()
-        throw new Error(text || response.statusText)
+        throw new Error(await this.extractErrorMessage(response))
       }
       return response.json()
+    },
+    async extractErrorMessage(response) {
+      try {
+        const text = await response.text()
+        const data = JSON.parse(text)
+        return data.error || text || response.statusText
+      } catch {
+        return response.statusText
+      }
     },
     async loadStatus() {
       try {

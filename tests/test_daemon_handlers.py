@@ -968,7 +968,7 @@ class TestHandleSyncPersistence:
         assert saved["status"] == "up_to_date"
         assert "lastSyncTimestamp" in saved
 
-    def test_sync_error_does_not_persist(self):
+    def test_sync_config_error_sets_error_status(self):
         daemon = _import_daemon()
         cmd = MagicMock()
         cmd.get_object_model.return_value = SimpleNamespace(
@@ -982,6 +982,37 @@ class TestHandleSyncPersistence:
         manager.sync.return_value = {"error": "No reference repository URL configured"}
 
         with patch.object(daemon, "save_settings_to_disk") as mock_save:
-            daemon.handle_sync(cmd, manager, "", {})
+            resp = daemon.handle_sync(cmd, manager, "", {})
 
-        mock_save.assert_not_called()
+        assert resp["status"] == 400
+        # Config errors (no networkError flag) set status to "error"
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "status", "error")
+        mock_save.assert_called_once()
+        assert mock_save.call_args[0][0]["status"] == "error"
+
+    def test_sync_network_error_sets_sync_error_status(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        cmd.get_object_model.return_value = SimpleNamespace(
+            plugins={"MeltingplotConfig": SimpleNamespace(data={
+                "referenceRepoUrl": "https://example.com/repo.git",
+                "detectedFirmwareVersion": "3.5.1",
+                "firmwareBranchOverride": "",
+            })}
+        )
+        manager = MagicMock()
+        manager.sync.return_value = {
+            "error": "Cannot reach the repository server (DNS lookup failed). Check your internet connection.",
+            "networkError": True,
+        }
+
+        with patch.object(daemon, "save_settings_to_disk") as mock_save:
+            resp = daemon.handle_sync(cmd, manager, "", {})
+
+        assert resp["status"] == 400
+        body = json.loads(resp["body"])
+        assert "internet connection" in body["error"].lower() or "DNS" in body["error"]
+        # Network errors set status to "sync_error"
+        cmd.set_plugin_data.assert_any_call("MeltingplotConfig", "status", "sync_error")
+        mock_save.assert_called_once()
+        assert mock_save.call_args[0][0]["status"] == "sync_error"

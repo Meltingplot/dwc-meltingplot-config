@@ -7,6 +7,7 @@ from config_manager import (
     PROTECTED_FILES,
     ConfigManager,
     _apply_single_hunk,
+    _friendly_network_error,
     _hunk_summary,
     _parse_hunk_header,
     is_protected,
@@ -481,3 +482,61 @@ class TestIsProtected:
 
     def test_constant_is_tuple(self):
         assert isinstance(PROTECTED_FILES, tuple)
+
+
+# --- Network error helper ---
+
+
+class TestFriendlyNetworkError:
+    """Tests for _friendly_network_error() message translation."""
+
+    def test_dns_failure(self):
+        msg = "git clone failed (rc=128): fatal: unable to access 'https://example.com/repo.git': Could not resolve host: example.com"
+        result = _friendly_network_error(msg)
+        assert "DNS" in result
+        assert "internet connection" in result.lower()
+
+    def test_connection_refused(self):
+        msg = "git fetch failed (rc=128): fatal: Connection refused"
+        result = _friendly_network_error(msg)
+        assert "refused" in result.lower()
+
+    def test_connection_timed_out(self):
+        msg = "git fetch failed (rc=128): fatal: Connection timed out"
+        result = _friendly_network_error(msg)
+        assert "timed out" in result.lower()
+
+    def test_network_unreachable(self):
+        msg = "git fetch failed (rc=128): fatal: Network is unreachable"
+        result = _friendly_network_error(msg)
+        assert "unreachable" in result.lower()
+
+    def test_unable_to_access(self):
+        msg = "git clone failed (rc=128): fatal: unable to access 'https://...': Failed to connect to host"
+        result = _friendly_network_error(msg)
+        assert "connect" in result.lower()
+
+    def test_could_not_read_remote(self):
+        msg = "git fetch failed (rc=128): fatal: Could not read from remote repository."
+        result = _friendly_network_error(msg)
+        assert "remote repository" in result.lower()
+
+    def test_ssl_error(self):
+        msg = "git clone failed (rc=128): fatal: SSL certificate problem"
+        result = _friendly_network_error(msg)
+        assert "SSL" in result
+
+    def test_connection_reset(self):
+        msg = "git fetch failed (rc=128): fatal: Connection reset by peer"
+        result = _friendly_network_error(msg)
+        assert "reset" in result.lower()
+
+    def test_fallback_strips_prefix(self):
+        msg = "git fetch failed (rc=1): some unknown git error"
+        result = _friendly_network_error(msg)
+        assert result == "some unknown git error"
+
+    def test_no_colon_returns_original(self):
+        msg = "unexpected error without colon"
+        result = _friendly_network_error(msg)
+        assert result == msg

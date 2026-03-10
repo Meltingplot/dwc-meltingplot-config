@@ -691,13 +691,15 @@ class TestSyncCascadingFailures:
     """Tests for sync() when git operations fail mid-sequence."""
 
     def test_fetch_raises_after_successful_clone(self, manager):
+        """Fetch failure is caught and returned as a network error dict."""
         with (
             patch("config_manager.clone") as mock_clone,
             patch("config_manager.fetch", side_effect=RuntimeError("network error")),
         ):
-            with pytest.raises(RuntimeError, match="network error"):
-                manager.sync("https://example.com/repo.git", "3.5")
+            result = manager.sync("https://example.com/repo.git", "3.5")
         mock_clone.assert_called_once()
+        assert "error" in result
+        assert result.get("networkError") is True
 
     def test_checkout_raises_after_successful_fetch(self, manager):
         with (
@@ -710,6 +712,7 @@ class TestSyncCascadingFailures:
                 manager.sync("https://example.com/repo.git", "3.5")
 
     def test_pull_raises_after_successful_checkout(self, manager):
+        """Pull failure is caught and returned as a network error dict."""
         with (
             patch("config_manager.clone"),
             patch("config_manager.fetch"),
@@ -717,8 +720,9 @@ class TestSyncCascadingFailures:
             patch("config_manager.checkout"),
             patch("config_manager.pull", side_effect=RuntimeError("pull failed")),
         ):
-            with pytest.raises(RuntimeError, match="pull failed"):
-                manager.sync("https://example.com/repo.git", "3.5")
+            result = manager.sync("https://example.com/repo.git", "3.5")
+        assert "error" in result
+        assert result.get("networkError") is True
 
 
 # --- Partial write failure tests ---

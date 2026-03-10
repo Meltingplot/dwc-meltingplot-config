@@ -79,6 +79,13 @@ describe('ConfigStatus', () => {
       expect(wrapper.vm.statusLabel).toBe('Error')
     })
 
+    it('maps "sync_error" to error color with Sync Failed label', () => {
+      const wrapper = mountComponent({ status: 'sync_error' })
+      expect(wrapper.vm.statusColor).toBe('error')
+      expect(wrapper.vm.statusLabel).toBe('Sync Failed')
+      expect(wrapper.vm.statusIcon).toBe('mdi-wifi-off')
+    })
+
     it('falls back to not_configured for unknown status', () => {
       const wrapper = mountComponent({ status: 'garbage' })
       expect(wrapper.vm.statusColor).toBe('grey')

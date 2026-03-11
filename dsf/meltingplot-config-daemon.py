@@ -550,14 +550,11 @@ def register_endpoints(cmd, manager):
 
 
 def main():
-    logger.info("Starting...")
-
     # Ensure persistent data directory exists (survives plugin upgrades)
     os.makedirs(DATA_DIR, exist_ok=True)
 
     cmd = CommandConnection()
     cmd.connect()
-    logger.info("Connected to DSF")
 
     # Restore persisted settings so user config survives plugin reload
     persisted = load_settings_from_disk()
@@ -571,22 +568,20 @@ def main():
 
     # Read object model once at startup for firmware version + directory mappings
     dir_map = None
+    fw_version = ""
     try:
         model = cmd.get_object_model()
 
         # Detect firmware version
         boards = getattr(model, "boards", None) or []
         if boards:
-            fw = getattr(boards[0], "firmware_version", "") or ""
-            if fw:
-                set_plugin_data(cmd, "detectedFirmwareVersion", fw)
-                logger.info("Firmware: %s", fw)
+            fw_version = getattr(boards[0], "firmware_version", "") or ""
+            if fw_version:
+                set_plugin_data(cmd, "detectedFirmwareVersion", fw_version)
 
         # Build directory mapping from object model
         dir_map = build_directory_map(model)
-        if dir_map:
-            logger.debug("Directory mappings from DSF: %s", dir_map)
-        else:
+        if not dir_map:
             logger.warning("No directory mappings from DSF, using defaults")
     except Exception as exc:
         logger.warning("Could not read object model: %s", exc)
@@ -621,7 +616,8 @@ def main():
     # Register HTTP endpoints (each runs in its own async handler thread)
     endpoints = register_endpoints(cmd, manager)
 
-    logger.info("Ready (%d endpoints)", len(endpoints))
+    fw_info = f", firmware {fw_version}" if fw_version else ""
+    logger.info("Ready — %d endpoints%s", len(endpoints), fw_info)
 
     # Keep main thread alive — endpoint handlers run in background threads
     try:

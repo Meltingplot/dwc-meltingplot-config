@@ -326,6 +326,7 @@ export default {
           try {
             await this.apiPost('/apply')
             this.notify('All changes applied successfully', 'success')
+            this.backupsLoaded = false
             await this.loadDiff()
           } catch (err) {
             this.notify('Apply failed: ' + err.message, 'error')
@@ -341,6 +342,7 @@ export default {
           try {
             await this.apiPost(`/apply?file=${encodeURIComponent(file)}`)
             this.notify(`Applied changes to ${file}`, 'success')
+            this.backupsLoaded = false
             await this.loadDiff()
           } catch (err) {
             this.notify('Apply failed: ' + err.message, 'error')
@@ -367,6 +369,7 @@ export default {
             } else {
               this.notify(`Applied ${count} change${count !== 1 ? 's' : ''} to ${file}`, 'success')
             }
+            this.backupsLoaded = false
             await this.loadDiff()
           } catch (err) {
             this.notify('Apply failed: ' + err.message, 'error')
@@ -382,6 +385,7 @@ export default {
           try {
             await this.apiPost(`/restore?hash=${encodeURIComponent(commitHash)}`)
             this.notify('Backup restored successfully', 'success')
+            this.backupsLoaded = false
             await this.loadDiff()
           } catch (err) {
             this.notify('Restore failed: ' + err.message, 'error')

@@ -392,6 +392,36 @@ describe('MeltingplotConfig', () => {
             expect(wrapper.vm.backupsLoaded).toBe(true);
         });
 
+        it('re-fetches backups after apply invalidates cache', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            // First visit loads backups
+            mockFetchSuccess({ backups: [{ hash: 'abc', message: 'backup' }] });
+            wrapper.vm.activeTab = 2;
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+            expect(wrapper.vm.backupsLoaded).toBe(true);
+
+            // Simulate an apply that resets the cache
+            wrapper.vm.backupsLoaded = false;
+
+            // Switch away and back to History tab
+            wrapper.vm.activeTab = 0;
+            await wrapper.vm.$nextTick();
+
+            mockFetchSuccess({ backups: [{ hash: 'abc', message: 'backup' }, { hash: 'def', message: 'new backup' }] });
+            wrapper.vm.activeTab = 2;
+            await wrapper.vm.$nextTick();
+            await new Promise(r => setTimeout(r, 10));
+
+            // Should have fetched backups again (new mock was called with /backups)
+            const backupCalls = global.fetch.mock.calls.filter(c => c[0].includes('/backups'));
+            expect(backupCalls.length).toBeGreaterThan(0);
+            expect(wrapper.vm.backups).toHaveLength(2);
+        });
+
         it('does not re-fetch backups on subsequent History tab visits', async () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent();
@@ -446,6 +476,17 @@ describe('MeltingplotConfig', () => {
             await wrapper.vm.confirmDialog.action();
             expect(wrapper.vm.snackbar.color).toBe('success');
         });
+
+        it('resets backupsLoaded after successful apply', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.backupsLoaded = true;
+            wrapper.vm.applyAll();
+
+            mockFetchSuccess({ applied: ['sys/config.g'], files: [] });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.backupsLoaded).toBe(false);
+        });
     });
 
     describe('applyFile', () => {
@@ -471,6 +512,17 @@ describe('MeltingplotConfig', () => {
             const applyCalls = global.fetch.mock.calls.filter(c => c[0].includes('/apply?file='));
             expect(applyCalls.length).toBeGreaterThan(0);
             expect(applyCalls[0][0]).toContain('/apply?file=sys%2Fconfig.g');
+        });
+
+        it('resets backupsLoaded after successful apply', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.backupsLoaded = true;
+            wrapper.vm.applyFile('sys/config.g');
+
+            mockFetchSuccess({ applied: ['sys/config.g'], files: [] });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.backupsLoaded).toBe(false);
         });
     });
 
@@ -510,6 +562,17 @@ describe('MeltingplotConfig', () => {
             wrapper.vm.applyHunks({ file: 'sys/config.g', hunks: [0] });
             expect(wrapper.vm.confirmDialog.message).toContain('1 selected change ');
         });
+
+        it('resets backupsLoaded after successful apply', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.backupsLoaded = true;
+            wrapper.vm.applyHunks({ file: 'sys/config.g', hunks: [0, 1] });
+
+            mockFetchSuccess({ applied: [0, 1], failed: [], files: [] });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.backupsLoaded).toBe(false);
+        });
     });
 
     describe('restoreBackup', () => {
@@ -529,6 +592,17 @@ describe('MeltingplotConfig', () => {
             mockFetchSuccess({ restored: ['sys/config.g'] });
             await wrapper.vm.confirmDialog.action();
             expect(wrapper.vm.snackbar.color).toBe('success');
+        });
+
+        it('resets backupsLoaded after successful restore', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.backupsLoaded = true;
+            wrapper.vm.restoreBackup('abc123');
+
+            mockFetchSuccess({ restored: ['sys/config.g'], files: [] });
+            await wrapper.vm.confirmDialog.action();
+            expect(wrapper.vm.backupsLoaded).toBe(false);
         });
 
         it('shows error on failure', async () => {

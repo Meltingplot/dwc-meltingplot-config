@@ -90,6 +90,16 @@ These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at s
 
 **Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
 
+### 6. NetworkInterfaceType enum missing `ethernet` value
+
+**Bug:** `NetworkInterfaceType(str, Enum)` in `dsf.object_model.network.network_interface_type` only defines `lan` and `wifi`. DSF 3.6.3-rc.1 reports `ethernet` for wired interfaces. The `NetworkInterface.type` setter calls `NetworkInterfaceType(value)` which raises `ValueError` for unrecognised values, crashing `get_object_model()` entirely.
+
+**Workaround (two-part):**
+1. **Enum replacement:** Replace the `NetworkInterfaceType` class in both `network_interface_type` and `network_interface` modules with one that includes `lan`, `wifi`, `ethernet`, and an `unknown` fallback.
+2. **Setter safety net:** Replace `NetworkInterface.type`'s setter with one that uses the new enum and catches `ValueError`/`KeyError`, falling back to `NetworkInterfaceType.unknown` for any future unknown values.
+
+**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+
 ## Development Setup
 
 ### Building the frontend

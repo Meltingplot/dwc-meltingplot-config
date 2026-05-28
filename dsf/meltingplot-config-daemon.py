@@ -78,6 +78,50 @@ try:
 except ImportError:
     pass  # dsf not installed (e.g. test environment)
 
+# Monkey-patch dsf-python: NetworkInterfaceType enum only defines "lan" and
+# "wifi", but DSF 3.6.3-rc.1 reports "ethernet" for wired interfaces.  The
+# NetworkInterface.type setter calls NetworkInterfaceType(value) which raises
+# ValueError for unrecognised values, crashing get_object_model() entirely.
+#
+# Fix: replace the entire NetworkInterfaceType enum with one that includes
+# "ethernet" and an "unknown" fallback, and patch the NetworkInterface.type
+# setter as a safety net for any future unknown values.
+try:
+    import dsf.object_model.network.network_interface_type as _nit_mod
+    import dsf.object_model.network.network_interface as _ni_mod
+    from dsf.object_model.network.network_interface import NetworkInterface as _NI
+    from enum import Enum
+
+    class _PatchedNetworkInterfaceType(str, Enum):
+        """Replacement NetworkInterfaceType including ethernet + unknown."""
+        unknown = "unknown"
+        lan = "lan"
+        wifi = "wifi"
+        ethernet = "ethernet"
+
+    # Replace the enum in both modules so the setter picks it up.
+    _nit_mod.NetworkInterfaceType = _PatchedNetworkInterfaceType
+    _ni_mod.NetworkInterfaceType = _PatchedNetworkInterfaceType
+
+    def _safe_ni_type_setter(self, value):
+        try:
+            if value is None or value == "":
+                self._type = _PatchedNetworkInterfaceType.wifi
+            elif isinstance(value, _PatchedNetworkInterfaceType):
+                self._type = value
+            elif isinstance(value, str):
+                self._type = _PatchedNetworkInterfaceType(value)
+            else:
+                raise TypeError(
+                    f"invalid type for NetworkInterface.type: {type(value)}"
+                )
+        except (ValueError, KeyError):
+            self._type = _PatchedNetworkInterfaceType.unknown
+
+    _NI.type = _NI.type.setter(_safe_ni_type_setter)
+except ImportError:
+    pass  # dsf not installed (e.g. test environment)
+
 from config_manager import ConfigManager, DATA_DIR
 
 logging.basicConfig(

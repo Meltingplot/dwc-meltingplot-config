@@ -48,6 +48,20 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 PROTECTED_FILES = (
     "sys/meltingplot/machine-override",
     "sys/meltingplot/dsf-config-override.g",
+    # RepRapFirmware's own override file — written by M500, holds the
+    # machine's saved parameters.
+    "sys/config-override.g",
+)
+
+# Additional protected files matched by pattern rather than exact path.
+# Each filament profile carries two user-editable files: config-override.g
+# (pressure advance, retract, …) and temps.g (per-material temperatures).
+# Both hold machine- and material-specific tuning and are protected just
+# like the other override files. The profile's config.g, load.g and
+# unload.g are machine-generated and stay updatable.
+PROTECTED_PATTERNS = (
+    re.compile(r"^filaments/[^/]+/config-override\.g$"),
+    re.compile(r"^filaments/[^/]+/temps\.g$"),
 )
 
 # Default directory mapping (fallback when DSF object model is unavailable).
@@ -642,8 +656,12 @@ def is_protected(ref_path):
 
     Protected files contain machine-specific calibration or user
     overrides that must never be replaced by reference config updates.
+    Matches both the exact paths in ``PROTECTED_FILES`` and the patterns
+    in ``PROTECTED_PATTERNS`` (e.g. per-filament config-override.g).
     """
-    return ref_path in PROTECTED_FILES
+    if ref_path in PROTECTED_FILES:
+        return True
+    return any(pattern.match(ref_path) for pattern in PROTECTED_PATTERNS)
 
 
 # --- Hunk patching helpers ---

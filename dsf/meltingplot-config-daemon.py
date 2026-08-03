@@ -339,13 +339,7 @@ def handle_diff(_cmd, manager, _body, queries):
 
 def handle_reference(_cmd, manager, _body, _queries):
     """GET /machine/MeltingplotConfig/reference"""
-    from git_utils import list_files
-    from config_manager import REFERENCE_DIR, is_protected
-    import os
-    if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
-        return json_response({"files": []})
-    files = [f for f in list_files(REFERENCE_DIR) if not is_protected(f)]
-    return json_response({"files": files})
+    return json_response({"files": manager.list_reference_files()})
 
 
 def handle_backups(_cmd, manager, _body, _queries):

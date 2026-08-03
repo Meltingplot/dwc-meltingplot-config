@@ -107,6 +107,12 @@ reported as `skipped` by *Apply all*:
 A filament profile's `config.g`, `load.g` and `unload.g` stay updatable — they are
 machine-generated on the printer, not hand-edited.
 
+Protection applies to the printer's **existing** copy only. If a protected file is
+missing on the printer — e.g. a filament profile the printer has never seen — there
+is nothing to preserve, so it shows up in the diff view as `missing` and is created
+from the reference by *Create File* or *Apply all*. Once created, it is protected
+from all further reference updates.
+
 ## API Endpoints
 
 All endpoints are under `/machine/MeltingplotConfig/`. Dynamic parameters use query strings (DSF uses exact path matching, no path parameters).

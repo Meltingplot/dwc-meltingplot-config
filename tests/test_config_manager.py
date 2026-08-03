@@ -533,6 +533,57 @@ class TestIsProtected:
         assert isinstance(PROTECTED_PATTERNS, tuple)
 
 
+class TestIsOverwriteProtected:
+    """Protection applies only to files that exist on the printer."""
+
+    def _make_manager(self, tmp_path):
+        mgr = ConfigManager.__new__(ConfigManager)
+        mgr._dir_map = {"sys/": "0:/sys/", "filaments/": "0:/filaments/"}
+        mgr._resolved_dirs = {
+            "0:/sys/": str(tmp_path / "sys") + "/",
+            "0:/filaments/": str(tmp_path / "filaments") + "/",
+        }
+        return mgr
+
+    def test_existing_protected_file_is_protected(self, tmp_path):
+        mgr = self._make_manager(tmp_path)
+        target = tmp_path / "filaments" / "PLA" / "config-override.g"
+        target.parent.mkdir(parents=True)
+        target.write_text("M572 D0 S0.06\n")
+
+        assert mgr._is_overwrite_protected("filaments/PLA/config-override.g") is True
+
+    def test_missing_protected_file_is_not_protected(self, tmp_path):
+        """A protected file the printer does not have can still be created."""
+        mgr = self._make_manager(tmp_path)
+
+        assert mgr._is_overwrite_protected("filaments/PLA/config-override.g") is False
+        assert mgr._is_overwrite_protected("filaments/PLA/temps.g") is False
+        assert mgr._is_overwrite_protected("sys/config-override.g") is False
+
+    def test_unprotected_file_never_protected(self, tmp_path):
+        mgr = self._make_manager(tmp_path)
+        target = tmp_path / "sys" / "config.g"
+        target.parent.mkdir(parents=True)
+        target.write_text("G28\n")
+
+        assert mgr._is_overwrite_protected("sys/config.g") is False
+
+    def test_unmappable_path_stays_protected(self, tmp_path):
+        """If the path cannot be mapped, err on the side of protection."""
+        mgr = self._make_manager(tmp_path)
+        mgr._dir_map = {}
+
+        assert mgr._is_overwrite_protected("sys/config-override.g") is True
+
+    def test_directory_is_not_a_file(self, tmp_path):
+        """A directory at the target path does not count as an existing file."""
+        mgr = self._make_manager(tmp_path)
+        (tmp_path / "filaments" / "PLA" / "config-override.g").mkdir(parents=True)
+
+        assert mgr._is_overwrite_protected("filaments/PLA/config-override.g") is False
+
+
 # --- Network error helper ---
 
 

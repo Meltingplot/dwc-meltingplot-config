@@ -44,6 +44,10 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 # Files that must never be overwritten by reference config updates.
 # These contain machine-specific overrides (calibration data, user
 # customisations) that would be lost if replaced with reference defaults.
+# Protection only applies to files that already exist on the printer —
+# if a protected file is missing locally there is nothing to preserve and
+# the reference version is used to create it (see
+# ``ConfigManager._is_overwrite_protected``).
 # Matched by exact ref_path.
 PROTECTED_FILES = (
     "sys/meltingplot/machine-override",
@@ -143,6 +147,31 @@ class ConfigManager:
             if printer_path.startswith(printer_prefix):
                 return fs_prefix + printer_path[len(printer_prefix):]
         return None
+
+    def _printer_file_exists(self, printer_path):
+        """Check whether a file exists on the printer filesystem."""
+        fs_path = self._printer_to_fs_path(printer_path)
+        if fs_path is None:
+            return False
+        return os.path.isfile(fs_path)
+
+    def _is_overwrite_protected(self, ref_path, printer_path=None):
+        """Check whether a reference file must not touch the printer's copy.
+
+        Protected files hold machine- and material-specific tuning, so an
+        existing copy on the printer is never replaced.  If the printer has
+        no copy at all there is nothing to preserve — the reference version
+        is then treated like any other missing file so it can be created
+        (e.g. a new filament profile's ``config-override.g``).
+        """
+        if not is_protected(ref_path):
+            return False
+        if printer_path is None:
+            printer_path = self._ref_to_printer_path(ref_path)
+        if printer_path is None:
+            # Path cannot be mapped — stay on the safe side.
+            return True
+        return self._printer_file_exists(printer_path)
 
     def _read_printer_file(self, printer_path):
         """Read a file from the printer filesystem."""
@@ -254,6 +283,19 @@ class ConfigManager:
             return ""
         return current_branch(REFERENCE_DIR)
 
+    def list_reference_files(self):
+        """List reference files that may be written to the printer.
+
+        Protected files are excluded only when the printer already has a
+        copy; missing ones stay listed because they can still be created.
+        """
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return []
+        return [
+            f for f in list_files(REFERENCE_DIR)
+            if not self._is_overwrite_protected(f)
+        ]
+
     # --- Diffing ---
 
     def diff_all(self):
@@ -272,7 +314,7 @@ class ConfigManager:
             if printer_path is None:
                 continue
 
-            if is_protected(ref_path):
+            if self._is_overwrite_protected(ref_path, printer_path):
                 continue
 
             ref_content = self._read_reference_file(ref_path)
@@ -326,7 +368,7 @@ class ConfigManager:
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
 
-        if is_protected(ref_path):
+        if self._is_overwrite_protected(ref_path, printer_path):
             return {"error": f"Protected file: {ref_path}"}
 
         ref_content = self._read_reference_file(ref_path)
@@ -428,7 +470,7 @@ class ConfigManager:
             printer_path = self._ref_to_printer_path(ref_path)
             if printer_path is None:
                 continue
-            if is_protected(ref_path):
+            if self._is_overwrite_protected(ref_path, printer_path):
                 skipped.append(ref_path)
                 continue
             ref_content = self._read_reference_file(ref_path)
@@ -444,13 +486,17 @@ class ConfigManager:
         return result
 
     def apply_file(self, ref_path):
-        """Apply a single reference file to the printer (with backup)."""
-        if is_protected(ref_path):
-            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
+        """Apply a single reference file to the printer (with backup).
 
+        Protected files are only rejected when they already exist on the
+        printer; a missing protected file is created from the reference.
+        """
         printer_path = self._ref_to_printer_path(ref_path)
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
+
+        if self._is_overwrite_protected(ref_path, printer_path):
+            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
 
         ref_content = self._read_reference_file(ref_path)
         if ref_content is None:
@@ -466,12 +512,12 @@ class ConfigManager:
 
         Returns dict with 'applied' and 'failed' hunk indices.
         """
-        if is_protected(ref_path):
-            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
-
         printer_path = self._ref_to_printer_path(ref_path)
         if printer_path is None:
             return {"error": f"Unknown reference path: {ref_path}"}
+
+        if self._is_overwrite_protected(ref_path, printer_path):
+            return {"error": f"Protected file cannot be overwritten: {ref_path}"}
 
         ref_content = self._read_reference_file(ref_path)
         printer_content = self._read_printer_file(printer_path)

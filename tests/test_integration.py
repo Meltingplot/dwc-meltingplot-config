@@ -742,3 +742,136 @@ class TestProtectedFiles:
 
         result = env["manager"].apply_file("sys/config.g")
         assert "sys/config.g" in result["applied"]
+
+
+@pytest.fixture
+def protected_missing_env(tmp_path, protected_file_repo):
+    """Integration env where the protected override files do not exist yet.
+
+    This is the state of a printer that has never seen a given filament
+    profile: the reference repo ships ``config-override.g`` / ``temps.g``
+    but the printer has no copy to protect.
+    """
+    printer_fs = tmp_path / "printer_sd"
+    printer_fs.mkdir()
+    sys_dir = printer_fs / "sys"
+    sys_dir.mkdir()
+    (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\n")
+    # No sys/config-override.g, no sys/meltingplot/ at all
+
+    # Filament directory exists but the profile has never been synced
+    (printer_fs / "filaments").mkdir()
+
+    ref_dir = str(tmp_path / "reference")
+    backup_dir = str(tmp_path / "backups")
+
+    resolved = {
+        "0:/sys/": str(printer_fs / "sys") + "/",
+        "0:/filaments/": str(printer_fs / "filaments") + "/",
+    }
+
+    with (
+        patch("config_manager.REFERENCE_DIR", ref_dir),
+        patch("config_manager.BACKUP_DIR", backup_dir),
+    ):
+        manager = ConfigManager(
+            dsf_command_connection=MagicMock(),
+            resolved_dirs=resolved,
+        )
+        yield {
+            "manager": manager,
+            "repo_url": protected_file_repo,
+            "printer_fs": printer_fs,
+        }
+
+
+class TestProtectedFilesMissingOnPrinter:
+    """Protected files absent on the printer must still be created."""
+
+    def test_diff_all_includes_missing_protected_files(self, protected_missing_env):
+        env = protected_missing_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        diff = env["manager"].diff_all()
+        by_file = {f["file"]: f for f in diff}
+
+        assert by_file["filaments/PLA/config-override.g"]["status"] == "missing"
+        assert by_file["filaments/PLA/temps.g"]["status"] == "missing"
+        assert by_file["sys/config-override.g"]["status"] == "missing"
+        assert by_file["sys/meltingplot/machine-override"]["status"] == "missing"
+
+    def test_diff_file_works_for_missing_protected_file(self, protected_missing_env):
+        env = protected_missing_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        detail = env["manager"].diff_file("filaments/PLA/config-override.g")
+        assert "error" not in detail
+        assert detail["status"] == "missing"
+        assert len(detail["hunks"]) > 0
+
+    def test_apply_file_creates_missing_protected_file(self, protected_missing_env):
+        env = protected_missing_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("filaments/PLA/config-override.g")
+        assert "error" not in result
+        assert "filaments/PLA/config-override.g" in result["applied"]
+
+        created = pfs / "filaments" / "PLA" / "config-override.g"
+        assert created.read_text() == "M572 D0 S0.05\n"
+
+    def test_apply_all_creates_missing_protected_files(self, protected_missing_env):
+        env = protected_missing_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_all()
+        assert "error" not in result
+        assert result.get("skipped", []) == []
+
+        assert "filaments/PLA/config-override.g" in result["applied"]
+        assert "filaments/PLA/temps.g" in result["applied"]
+        assert "sys/config-override.g" in result["applied"]
+        assert "sys/meltingplot/machine-override" in result["applied"]
+
+        assert (pfs / "filaments" / "PLA" / "config-override.g").read_text() == "M572 D0 S0.05\n"
+        assert (pfs / "filaments" / "PLA" / "temps.g").exists()
+        assert (pfs / "sys" / "config-override.g").read_text() == "M307 H0 R0.5\n"
+
+    def test_created_file_is_protected_afterwards(self, protected_missing_env):
+        """Once created, the file is protected from further updates."""
+        env = protected_missing_env
+        pfs = env["printer_fs"]
+        env["manager"].sync(env["repo_url"], "1.0")
+        env["manager"].apply_file("filaments/PLA/config-override.g")
+
+        # User tunes the freshly created file
+        target = pfs / "filaments" / "PLA" / "config-override.g"
+        target.write_text("M572 D0 S0.11 TUNED\n")
+
+        result = env["manager"].apply_file("filaments/PLA/config-override.g")
+        assert "error" in result
+        assert "Protected" in result["error"]
+
+        assert env["manager"].apply_all().get("skipped") == [
+            "filaments/PLA/config-override.g"
+        ]
+        assert target.read_text() == "M572 D0 S0.11 TUNED\n"
+
+    def test_list_reference_files_includes_missing_protected(self, protected_missing_env):
+        env = protected_missing_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        files = env["manager"].list_reference_files()
+        assert "filaments/PLA/config-override.g" in files
+        assert "sys/config-override.g" in files
+
+    def test_list_reference_files_excludes_existing_protected(self, protected_env):
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        files = env["manager"].list_reference_files()
+        assert "sys/config.g" in files
+        assert "filaments/PLA/config-override.g" not in files
+        assert "sys/config-override.g" not in files

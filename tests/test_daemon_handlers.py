@@ -259,9 +259,9 @@ class TestHandleReference:
         daemon = _import_daemon()
         cmd = MagicMock()
         manager = MagicMock()
+        manager.list_reference_files.return_value = []
 
-        with patch("os.path.isdir", return_value=False):
-            resp = daemon.handle_reference(cmd, manager, "", {})
+        resp = daemon.handle_reference(cmd, manager, "", {})
 
         body = json.loads(resp["body"])
         assert body["files"] == []
@@ -270,12 +270,12 @@ class TestHandleReference:
         daemon = _import_daemon()
         cmd = MagicMock()
         manager = MagicMock()
+        manager.list_reference_files.return_value = [
+            "sys/config.g",
+            "sys/homex.g",
+        ]
 
-        with (
-            patch("os.path.isdir", return_value=True),
-            patch("git_utils.list_files", return_value=["sys/config.g", "sys/homex.g"]),
-        ):
-            resp = daemon.handle_reference(cmd, manager, "", {})
+        resp = daemon.handle_reference(cmd, manager, "", {})
 
         body = json.loads(resp["body"])
         assert "sys/config.g" in body["files"]

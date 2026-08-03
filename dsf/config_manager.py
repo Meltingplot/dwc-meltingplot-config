@@ -50,6 +50,14 @@ PROTECTED_FILES = (
     "sys/meltingplot/dsf-config-override.g",
 )
 
+# Additional protected files matched by pattern rather than exact path.
+# Filament profiles may carry their own config-override.g holding
+# machine-specific tuning for that filament — it is protected just like
+# the other config-override.g files.
+PROTECTED_PATTERNS = (
+    re.compile(r"^filaments/[^/]+/config-override\.g$"),
+)
+
 # Default directory mapping (fallback when DSF object model is unavailable).
 # In production, the daemon reads model.directories and builds this dynamically.
 DEFAULT_DIRECTORY_MAP = {
@@ -642,8 +650,12 @@ def is_protected(ref_path):
 
     Protected files contain machine-specific calibration or user
     overrides that must never be replaced by reference config updates.
+    Matches both the exact paths in ``PROTECTED_FILES`` and the patterns
+    in ``PROTECTED_PATTERNS`` (e.g. per-filament config-override.g).
     """
-    return ref_path in PROTECTED_FILES
+    if ref_path in PROTECTED_FILES:
+        return True
+    return any(pattern.match(ref_path) for pattern in PROTECTED_PATTERNS)
 
 
 # --- Hunk patching helpers ---

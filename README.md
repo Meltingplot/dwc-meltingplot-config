@@ -92,6 +92,16 @@ meltingplot-config-mp400.git
 │   └── ...
 ```
 
+### Protected files
+
+Some files hold machine-specific data (calibration, per-machine tuning) and are
+never overwritten by a reference update. They are hidden from the diff view and
+reported as `skipped` by *Apply all*:
+
+- `sys/meltingplot/machine-override`
+- `sys/meltingplot/dsf-config-override.g`
+- `filaments/<profile>/config-override.g` — every filament profile may carry its own
+
 ## API Endpoints
 
 All endpoints are under `/machine/MeltingplotConfig/`. Dynamic parameters use query strings (DSF uses exact path matching, no path parameters).

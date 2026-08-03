@@ -5,6 +5,7 @@ import pytest
 from config_manager import (
     BACKUP_INCLUDED_DIRS,
     PROTECTED_FILES,
+    PROTECTED_PATTERNS,
     ConfigManager,
     _apply_single_hunk,
     _friendly_network_error,
@@ -480,8 +481,34 @@ class TestIsProtected:
     def test_other_meltingplot_file_not_protected(self):
         assert is_protected("sys/meltingplot/other-file.g") is False
 
+    def test_filament_config_override(self):
+        assert is_protected("filaments/PLA/config-override.g") is True
+
+    def test_filament_config_override_name_with_spaces(self):
+        assert is_protected("filaments/Meltingplot PETG/config-override.g") is True
+
+    def test_filament_config_g_not_protected(self):
+        """The reference config.g of a filament profile is still updatable."""
+        assert is_protected("filaments/PLA/config.g") is False
+
+    def test_filament_load_unload_not_protected(self):
+        assert is_protected("filaments/PLA/load.g") is False
+        assert is_protected("filaments/PLA/unload.g") is False
+
+    def test_filament_config_override_without_profile_not_protected(self):
+        assert is_protected("filaments/config-override.g") is False
+
+    def test_filament_config_override_nested_deeper_not_protected(self):
+        assert is_protected("filaments/PLA/sub/config-override.g") is False
+
+    def test_config_override_outside_filaments_not_protected(self):
+        assert is_protected("macros/PLA/config-override.g") is False
+
     def test_constant_is_tuple(self):
         assert isinstance(PROTECTED_FILES, tuple)
+
+    def test_patterns_constant_is_tuple(self):
+        assert isinstance(PROTECTED_PATTERNS, tuple)
 
 
 # --- Network error helper ---

@@ -373,8 +373,8 @@ describe('ConfigDiff', () => {
     })
   })
 
-  describe('protected files are excluded', () => {
-    it('backend never sends protected files so they are not in changedFiles', () => {
+  describe('protected files', () => {
+    it('backend never sends existing protected files so they are not in changedFiles', () => {
       const files = [
         { file: 'sys/config.g', status: 'modified', hunks: [] },
         { file: 'sys/unchanged.g', status: 'unchanged', hunks: [] }
@@ -382,6 +382,19 @@ describe('ConfigDiff', () => {
       const wrapper = mountComponent({ files })
       expect(wrapper.vm.changedFiles).toHaveLength(1)
       expect(wrapper.vm.changedFiles[0].file).toBe('sys/config.g')
+    })
+
+    it('protected files missing on the printer are listed as creatable', () => {
+      const files = [
+        {
+          file: 'filaments/PLA/config-override.g',
+          status: 'missing',
+          hunks: [{ index: 0, header: '@@ -0,0 +1,1 @@' }]
+        }
+      ]
+      const wrapper = mountComponent({ files })
+      expect(wrapper.vm.changedFiles).toHaveLength(1)
+      expect(wrapper.vm.changedFiles[0].status).toBe('missing')
     })
   })
 

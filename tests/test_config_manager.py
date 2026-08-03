@@ -484,11 +484,27 @@ class TestIsProtected:
     def test_filament_config_override(self):
         assert is_protected("filaments/PLA/config-override.g") is True
 
-    def test_filament_config_override_name_with_spaces(self):
-        assert is_protected("filaments/Meltingplot PETG/config-override.g") is True
+    @pytest.mark.parametrize(
+        "profile",
+        [
+            "PLA+",
+            "PETG-0.6mm",
+            "Flexfill 0.6 mm",
+            "Luvocom 3F PP CF 9928",
+            "NOVAMID-1030-CF10 0.4mm",
+            "PythonFlex - 0.6mm",
+        ],
+    )
+    def test_filament_config_override_real_profile_names(self, profile):
+        """Real chx350-config profile names — spaces, dots, '+' and '-'."""
+        assert is_protected(f"filaments/{profile}/config-override.g") is True
+
+    def test_filament_temps(self):
+        """temps.g holds per-material temperatures edited by the user."""
+        assert is_protected("filaments/PLA/temps.g") is True
 
     def test_filament_config_g_not_protected(self):
-        """The reference config.g of a filament profile is still updatable."""
+        """The machine-generated config.g of a profile is still updatable."""
         assert is_protected("filaments/PLA/config.g") is False
 
     def test_filament_load_unload_not_protected(self):
@@ -497,9 +513,15 @@ class TestIsProtected:
 
     def test_filament_config_override_without_profile_not_protected(self):
         assert is_protected("filaments/config-override.g") is False
+        assert is_protected("filaments/temps.g") is False
 
     def test_filament_config_override_nested_deeper_not_protected(self):
         assert is_protected("filaments/PLA/sub/config-override.g") is False
+        assert is_protected("filaments/PLA/sub/temps.g") is False
+
+    def test_rrf_config_override(self):
+        """RRF's own M500 override file."""
+        assert is_protected("sys/config-override.g") is True
 
     def test_config_override_outside_filaments_not_protected(self):
         assert is_protected("macros/PLA/config-override.g") is False

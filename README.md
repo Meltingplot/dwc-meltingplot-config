@@ -98,9 +98,14 @@ Some files hold machine-specific data (calibration, per-machine tuning) and are
 never overwritten by a reference update. They are hidden from the diff view and
 reported as `skipped` by *Apply all*:
 
+- `sys/config-override.g` — RepRapFirmware's own `M500` output
 - `sys/meltingplot/machine-override`
 - `sys/meltingplot/dsf-config-override.g`
-- `filaments/<profile>/config-override.g` — every filament profile may carry its own
+- `filaments/<profile>/config-override.g` — per-material tuning (pressure advance, retract, …)
+- `filaments/<profile>/temps.g` — per-material temperatures
+
+A filament profile's `config.g`, `load.g` and `unload.g` stay updatable — they are
+machine-generated on the printer, not hand-edited.
 
 ## API Endpoints
 

@@ -538,6 +538,8 @@ def protected_file_repo(tmp_path):
     sys_dir = clone_dir / "sys"
     sys_dir.mkdir()
     (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\n")
+    # RRF's own M500 override file
+    (sys_dir / "config-override.g").write_text("M307 H0 R0.5\n")
 
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
@@ -545,11 +547,12 @@ def protected_file_repo(tmp_path):
     # machine-override is a file without extension
     (mp_dir / "machine-override").write_text("M208 X300 Y300 Z400\n")
 
-    # Filament profile with its own protected config-override.g
+    # Filament profile with its own protected config-override.g / temps.g
     filament_dir = clone_dir / "filaments" / "PLA"
     filament_dir.mkdir(parents=True)
     (filament_dir / "config.g").write_text("M104 S210\n")
     (filament_dir / "config-override.g").write_text("M572 D0 S0.05\n")
+    (filament_dir / "temps.g").write_text("set global.filament_temp_active = 210\n")
 
     subprocess.run(["git", "add", "-A"], cwd=str(clone_dir), check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "config with overrides"], cwd=str(clone_dir), check=True, capture_output=True)
@@ -567,6 +570,7 @@ def protected_env(tmp_path, protected_file_repo):
     sys_dir = printer_fs / "sys"
     sys_dir.mkdir()
     (sys_dir / "config.g").write_text("G28\nM584 X0 Y1\n")
+    (sys_dir / "config-override.g").write_text("M307 H0 R0.9 ORIGINAL\n")
 
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
@@ -577,6 +581,7 @@ def protected_env(tmp_path, protected_file_repo):
     filament_dir.mkdir(parents=True)
     (filament_dir / "config.g").write_text("M104 S200\n")
     (filament_dir / "config-override.g").write_text("M572 D0 S0.09 ORIGINAL\n")
+    (filament_dir / "temps.g").write_text("set global.filament_temp_active = 195 ORIGINAL\n")
 
     ref_dir = str(tmp_path / "reference")
     backup_dir = str(tmp_path / "backups")
@@ -616,7 +621,9 @@ class TestProtectedFiles:
         assert "sys/meltingplot/dsf-config-override.g" not in files_in_diff
         assert "sys/meltingplot/machine-override" not in files_in_diff
         assert "filaments/PLA/config-override.g" not in files_in_diff
-        # The filament profile's normal config is still diffed
+        assert "filaments/PLA/temps.g" not in files_in_diff
+        assert "sys/config-override.g" not in files_in_diff
+        # The filament profile's machine-generated config is still diffed
         assert "filaments/PLA/config.g" in files_in_diff
 
     def test_diff_file_returns_error_for_protected(self, protected_env):
@@ -640,6 +647,8 @@ class TestProtectedFiles:
         assert "sys/meltingplot/dsf-config-override.g" in result["skipped"]
         assert "sys/meltingplot/machine-override" in result["skipped"]
         assert "filaments/PLA/config-override.g" in result["skipped"]
+        assert "filaments/PLA/temps.g" in result["skipped"]
+        assert "sys/config-override.g" in result["skipped"]
 
         # Protected files should retain their original content
         override_content = (pfs / "sys" / "meltingplot" / "dsf-config-override.g").read_text()
@@ -650,6 +659,12 @@ class TestProtectedFiles:
 
         filament_override = (pfs / "filaments" / "PLA" / "config-override.g").read_text()
         assert "ORIGINAL" in filament_override
+
+        filament_temps = (pfs / "filaments" / "PLA" / "temps.g").read_text()
+        assert "ORIGINAL" in filament_temps
+
+        rrf_override = (pfs / "sys" / "config-override.g").read_text()
+        assert "ORIGINAL" in rrf_override
 
         # The filament profile's normal config is updated
         assert "filaments/PLA/config.g" in result["applied"]
@@ -687,6 +702,24 @@ class TestProtectedFiles:
         env["manager"].sync(env["repo_url"], "1.0")
 
         result = env["manager"].apply_hunks("filaments/PLA/config-override.g", [0])
+        assert "error" in result
+        assert "Protected" in result["error"]
+
+    def test_apply_file_rejects_filament_temps(self, protected_env):
+        """apply_file on a filament profile's temps.g is rejected."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("filaments/PLA/temps.g")
+        assert "error" in result
+        assert "Protected" in result["error"]
+
+    def test_apply_file_rejects_rrf_config_override(self, protected_env):
+        """apply_file on RRF's own config-override.g is rejected."""
+        env = protected_env
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_file("sys/config-override.g")
         assert "error" in result
         assert "Protected" in result["error"]
 

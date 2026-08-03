@@ -48,14 +48,20 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 PROTECTED_FILES = (
     "sys/meltingplot/machine-override",
     "sys/meltingplot/dsf-config-override.g",
+    # RepRapFirmware's own override file — written by M500, holds the
+    # machine's saved parameters.
+    "sys/config-override.g",
 )
 
 # Additional protected files matched by pattern rather than exact path.
-# Filament profiles may carry their own config-override.g holding
-# machine-specific tuning for that filament — it is protected just like
-# the other config-override.g files.
+# Each filament profile carries two user-editable files: config-override.g
+# (pressure advance, retract, …) and temps.g (per-material temperatures).
+# Both hold machine- and material-specific tuning and are protected just
+# like the other override files. The profile's config.g, load.g and
+# unload.g are machine-generated and stay updatable.
 PROTECTED_PATTERNS = (
     re.compile(r"^filaments/[^/]+/config-override\.g$"),
+    re.compile(r"^filaments/[^/]+/temps\.g$"),
 )
 
 # Default directory mapping (fallback when DSF object model is unavailable).

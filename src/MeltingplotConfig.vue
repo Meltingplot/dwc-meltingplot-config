@@ -1,5 +1,26 @@
 <template>
   <v-container fluid>
+    <v-row v-if="backendRunning === false">
+      <v-col cols="12">
+        <v-alert type="warning" prominent text class="mb-0">
+          <div class="d-flex flex-wrap align-center">
+            <div class="flex-grow-1 mr-4">
+              <div class="subtitle-1 font-weight-medium">Backend is not running</div>
+              <div class="body-2">
+                The SBC part of this plugin is stopped, so no configuration data can be
+                loaded. This happens after a plugin update — DSF stops the old backend
+                process and does not start the new one.
+              </div>
+            </div>
+            <v-btn color="warning" :loading="startingBackend" @click="startBackend">
+              <v-icon left>mdi-play</v-icon>
+              Start Backend
+            </v-btn>
+          </div>
+        </v-alert>
+      </v-col>
+    </v-row>
+
     <v-row>
       <v-col cols="12">
         <v-card>
@@ -150,8 +171,13 @@ import { mapState } from 'vuex'
 import ConfigStatus from './components/ConfigStatus.vue'
 import ConfigDiff from './components/ConfigDiff.vue'
 import BackupHistory from './components/BackupHistory.vue'
+import { isBackendRunning, startBackend } from './backend'
 
 const API_BASE = '/machine/MeltingplotConfig'
+
+// How long to wait for the daemon to register its HTTP endpoints after start
+const BACKEND_WAIT_ATTEMPTS = 15
+const BACKEND_WAIT_INTERVAL = 1000
 
 export default {
   name: 'MeltingplotConfig',
@@ -164,6 +190,7 @@ export default {
       loadingBackups: false,
       backupsLoaded: false,
       savingSettings: false,
+      startingBackend: false,
       diffFiles: [],
       backups: [],
       availableBranches: [],
@@ -207,6 +234,10 @@ export default {
           lastSyncTimestamp: data.lastSyncTimestamp || '',
           status: data.status || 'not_configured'
         }
+      },
+      // true / false, or null while the object model has not reported a PID yet
+      backendRunning(state) {
+        return isBackendRunning(state)
       }
     }),
     changedFileCount() {
@@ -225,6 +256,12 @@ export default {
         this.settings.firmwareBranchOverride = val.firmwareBranchOverride
       },
       immediate: true
+    },
+    backendRunning(val, oldVal) {
+      // Pick the data up once the backend comes back (started here or elsewhere)
+      if (val === true && oldVal === false) {
+        this.loadStatus()
+      }
     }
   },
   mounted() {
@@ -273,6 +310,33 @@ export default {
       } catch {
         // Status endpoint may not be available yet
       }
+    },
+    async startBackend() {
+      this.startingBackend = true
+      try {
+        await startBackend(this.$store)
+        if (!await this.waitForBackend()) {
+          throw new Error('backend did not come up in time')
+        }
+        await this.loadStatus()
+        this.notify('Backend started', 'success')
+      } catch (err) {
+        this.notify('Failed to start backend: ' + (err && err.message ? err.message : err), 'error')
+      } finally {
+        this.startingBackend = false
+      }
+    },
+    async waitForBackend(attempts = BACKEND_WAIT_ATTEMPTS, delay = BACKEND_WAIT_INTERVAL) {
+      // The daemon needs a moment to connect to DSF and register its endpoints
+      for (let i = 0; i < attempts; i++) {
+        try {
+          await this.apiGet('/status')
+          return true
+        } catch {
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+      }
+      return false
     },
     async checkForUpdates() {
       this.syncing = true

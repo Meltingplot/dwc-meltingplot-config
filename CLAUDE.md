@@ -10,7 +10,9 @@
 dwc-meltingplot-config/
 ├── plugin.json                        # DWC+DSF plugin manifest
 ├── src/                               # DWC frontend (Vue 2.7 + Vuetify 2.7)
-│   ├── index.js                       # Entry point — registers route under Plugins menu
+│   ├── index.js                       # Entry point — registers route, recovers stopped backend
+│   ├── backend.js                     # SBC backend state helpers (pid lookup, start, auto-recovery)
+│   ├── routes.js / store.js           # Jest-only stubs for DWC's @/routes and @/store
 │   ├── MeltingplotConfig.vue          # Main page: tabs for Status/Changes/History/Settings
 │   └── components/
 │       ├── ConfigStatus.vue           # Status dashboard (FW version, sync status, branch)
@@ -149,6 +151,7 @@ Our testing strategy fills this gap with four layers:
 - **Install:** `npm install` (installs devDependencies including Jest)
 - **Run:** `npm test`
 - **Test files (in `tests/frontend/`):**
+  - `backend.test.js` — SBC backend PID detection and auto-start recovery
   - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events
   - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, side-by-side diff logic
   - `BackupHistory.test.js` — Empty/loading states, backup display, expand/collapse, fetch mocking
@@ -240,6 +243,40 @@ These patterns have caused real bugs in this project. Be aware of them:
 4. **Directory mapping trailing slashes:** DSF Directories values lack trailing slashes (`"0:/sys"`). The daemon adds them (`"0:/sys/"`). The reference repo folder name is extracted after the `:/` separator.
 5. **Side-by-side diff rendering:** `sideBySideLines(hunk)` pairs consecutive `-`/`+` lines into left/right columns. Context lines appear on both sides. Unbalanced removes/adds leave empty cells (`null` value, `diff-empty` CSS class).
 6. **Plugin uninstall wipes PLUGIN_DIR:** DSF deletes the entire `/opt/dsf/plugins/MeltingplotConfig/` directory on full uninstall. During upgrade, DSF only removes tracked plugin files (from `DsfFiles`/`DwcFiles`/`SdFiles`) but extra runtime-created files survive. Regardless, all persistent data (settings, reference repo, backups) must live in `DATA_DIR` (`/opt/dsf/sd/MeltingplotConfig/`), not the plugin directory.
+7. **Plugin upgrades do not restart the SBC backend** — see below.
+
+### Plugin upgrade leaves the backend stopped
+
+Upgrading the plugin puts it into DWC's **"partially started"** state: the DWC
+resources are loaded, but the Python daemon is dead and every
+`/machine/MeltingplotConfig/*` endpoint returns 404. This is upstream behaviour,
+not a bug in our plugin:
+
+1. `InstallPlugin` (DCS) detects an existing plugin and first runs
+   `UninstallPlugin { ForUpgrade = true }`, which issues `StopPlugin` and rewrites
+   `plugins.json` **without** our plugin — so it also no longer auto-starts on boot.
+2. `InstallPlugin` then re-registers the plugin in the object model with `Pid = -1`
+   and never starts it.
+3. DWC only issues `StartPlugin` when `installPlugin` is called with `start: true`,
+   which `UploadBtn.vue` sets only for `UploadType.start` ("Upload & Start"). The
+   "Install Plugin" button on *Settings → Plugins* uses `UploadType.plugin`, so
+   `start` is `false`.
+4. `Plugins.vue#getPluginStatus` then reports `partiallyStarted`, because
+   `(plugin.pid >= 0) != enabledPlugins.includes(id)`.
+
+**Our workaround** lives in `src/backend.js`:
+
+- `isBackendRunning(modelState)` reads `plugin.pid` from `state.plugins`
+  (`-1` = stopped, `0` = shutting down, `> 0` = running; `null` when not yet known).
+- `ensureBackendRunning(store)` is called from `src/index.js` when DWC loads our
+  resources. It polls the object model until the PID is known and dispatches
+  `machine/startSbcPlugin` if the backend is stopped. DSF's `StartPlugin` defaults
+  to `SaveState = true`, so this also restores the boot auto-start entry.
+- `MeltingplotConfig.vue` shows a warning banner with a manual **Start Backend**
+  button whenever `backendRunning === false`, as a visible fallback.
+
+`@/store` (like `@/routes`) is provided by DWC at build time; `src/store.js` is an
+inert Jest-only stub and is excluded from the plugin ZIP.
 
 ### Verifying upstream APIs
 

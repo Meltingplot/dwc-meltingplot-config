@@ -177,10 +177,11 @@ describe('Plugin ZIP structure', () => {
     expect(forbidden).toEqual([])
   })
 
-  it('does not contain test stubs (routes.js, __mocks__)', () => {
+  it('does not contain test stubs (routes.js, store.js, __mocks__)', () => {
     const stubs = zipEntries.filter(e =>
       e.includes('__mocks__') ||
-      e.endsWith('routes.js')
+      e.endsWith('routes.js') ||
+      e.endsWith('store.js')
     )
     expect(stubs).toEqual([])
   })

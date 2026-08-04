@@ -46,15 +46,30 @@ npm run build
 5. In the **Settings** tab, configure the reference repository URL for your printer model
 6. The plugin auto-detects your firmware version, selects the matching branch, and compares configs
 
+### Updating
+
+Installing a newer ZIP over an existing installation is an *upgrade*. DSF stops the
+old backend process during the upgrade and does not start the new one, which leaves
+the plugin in DWC's **"partially started"** state with all HTTP endpoints returning
+404.
+
+The plugin recovers from this on its own: after reloading DWC, it detects the stopped
+backend and asks DSF to start it (which also restores the boot auto-start entry). If
+that does not work — for example because DSF refused the start — open
+**Plugins → Meltingplot Config**; a warning banner with a **Start Backend** button is
+shown while the backend is down.
+
 ## Plugin Structure
 
 ```
 dwc-meltingplot-config/
 ├── plugin.json                        # DWC+DSF plugin manifest
 ├── src/                               # DWC frontend (Vue 2.7 + Vuetify 2.7)
-│   ├── index.js                       # Entry point — registers route under Plugins menu
+│   ├── index.js                       # Entry point — registers route, recovers stopped backend
 │   ├── MeltingplotConfig.vue          # Main page: tabs for Status/Changes/History/Settings
+│   ├── backend.js                     # SBC backend state (PID lookup, start, auto-recovery)
 │   ├── routes.js                      # Stub for DWC's route registration API
+│   ├── store.js                       # Stub for DWC's Vuex store
 │   └── components/
 │       ├── ConfigStatus.vue           # Status dashboard (FW version, sync status, branch)
 │       ├── ConfigDiff.vue             # Diff viewer with hunk-level checkboxes and apply

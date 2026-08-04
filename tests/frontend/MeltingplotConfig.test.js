@@ -5,15 +5,25 @@ import MeltingplotConfig from '../../src/MeltingplotConfig.vue';
 const localVue = createLocalVue();
 localVue.use(Vuex);
 
-function createStore(pluginData = {}) {
+function createStore(pluginData = {}, options = {}) {
+    const plugin = { data: pluginData };
+    if (options.pid !== undefined) {
+        plugin.pid = options.pid;
+    }
     return new Vuex.Store({
         modules: {
             'machine/model': {
                 namespaced: true,
                 state: {
                     plugins: {
-                        MeltingplotConfig: { data: pluginData }
+                        MeltingplotConfig: plugin
                     }
+                }
+            },
+            machine: {
+                namespaced: true,
+                actions: {
+                    startSbcPlugin: options.startSbcPlugin || jest.fn()
                 }
             }
         }
@@ -21,7 +31,7 @@ function createStore(pluginData = {}) {
 }
 
 function mountComponent(options = {}) {
-    const store = createStore(options.pluginData || {});
+    const store = createStore(options.pluginData || {}, options);
     // Stub child components to avoid rendering them
     return shallowMount(MeltingplotConfig, {
         localVue,
@@ -109,6 +119,113 @@ describe('MeltingplotConfig', () => {
             const wrapper = mountComponent({ pluginData: {} });
             expect(wrapper.vm.pluginData.referenceRepoUrl).toBe('');
             expect(wrapper.vm.pluginData.status).toBe('not_configured');
+        });
+    });
+
+    describe('backend running state', () => {
+        it('is null while the object model reports no PID', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            expect(wrapper.vm.backendRunning).toBeNull();
+        });
+
+        it('is true when the SBC process is running', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent({ pid: 4711 });
+            expect(wrapper.vm.backendRunning).toBe(true);
+        });
+
+        it('is false after an upgrade left the process stopped', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent({ pid: -1 });
+            expect(wrapper.vm.backendRunning).toBe(false);
+        });
+
+        it('shows the warning banner only when the backend is stopped', async () => {
+            mockFetchSuccess({ branches: [] });
+
+            const stopped = mountComponent({ pid: -1 });
+            await stopped.vm.$nextTick();
+            expect(stopped.text()).toContain('Backend is not running');
+
+            const running = mountComponent({ pid: 4711 });
+            await running.vm.$nextTick();
+            expect(running.text()).not.toContain('Backend is not running');
+
+            const unknown = mountComponent();
+            await unknown.vm.$nextTick();
+            expect(unknown.text()).not.toContain('Backend is not running');
+        });
+    });
+
+    describe('startBackend', () => {
+        it('dispatches machine/startSbcPlugin and reports success', async () => {
+            mockFetchSuccess({ branches: [] });
+            const startSbcPlugin = jest.fn();
+            const wrapper = mountComponent({ pid: -1, startSbcPlugin });
+
+            mockFetchSuccess({ branches: ['main'] });
+            await wrapper.vm.startBackend();
+
+            expect(startSbcPlugin).toHaveBeenCalled();
+            expect(startSbcPlugin.mock.calls[0][1]).toBe('MeltingplotConfig');
+            expect(wrapper.vm.snackbar.color).toBe('success');
+            expect(wrapper.vm.startingBackend).toBe(false);
+        });
+
+        it('sets startingBackend during the operation', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent({ pid: -1 });
+
+            mockFetchSuccess({ branches: [] });
+            const promise = wrapper.vm.startBackend();
+            expect(wrapper.vm.startingBackend).toBe(true);
+            await promise;
+            expect(wrapper.vm.startingBackend).toBe(false);
+        });
+
+        it('reports an error when DSF refuses to start the plugin', async () => {
+            mockFetchSuccess({ branches: [] });
+            const startSbcPlugin = jest.fn(() => {
+                throw new Error('Incompatible DSF version');
+            });
+            const wrapper = mountComponent({ pid: -1, startSbcPlugin });
+
+            await wrapper.vm.startBackend();
+            expect(wrapper.vm.snackbar.color).toBe('error');
+            expect(wrapper.vm.snackbar.text).toContain('Incompatible DSF version');
+            expect(wrapper.vm.startingBackend).toBe(false);
+        });
+
+        it('reports an error when the endpoints never come up', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent({ pid: -1 });
+
+            jest.spyOn(wrapper.vm, 'waitForBackend').mockResolvedValue(false);
+            await wrapper.vm.startBackend();
+
+            expect(wrapper.vm.snackbar.color).toBe('error');
+            expect(wrapper.vm.snackbar.text).toContain('did not come up');
+        });
+    });
+
+    describe('waitForBackend', () => {
+        it('returns true as soon as /status answers', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+
+            mockFetchSuccess({ branches: [] });
+            await expect(wrapper.vm.waitForBackend(3, 1)).resolves.toBe(true);
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+        });
+
+        it('retries and returns false when /status keeps failing', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+
+            mockFetchError(404, 'Not Found');
+            await expect(wrapper.vm.waitForBackend(3, 1)).resolves.toBe(false);
+            expect(global.fetch).toHaveBeenCalledTimes(3);
         });
     });
 

@@ -78,10 +78,11 @@ for (const file of dsfFiles) {
 // dwc/ — Frontend source files (for DWC's plugin loader)
 // In a production build, these would be compiled JS chunks.
 // For CI, we include the source so the ZIP is a valid plugin structure.
-// Exclude test stubs (__mocks__/, routes.js) that only exist for Jest.
+// Exclude test stubs (__mocks__/, routes.js, store.js) that only exist for Jest —
+// DWC provides the real @/routes and @/store modules at build time.
 archive.glob('**/*', {
     cwd: path.join(ROOT, 'src'),
-    ignore: ['__mocks__/**', 'routes.js']
+    ignore: ['__mocks__/**', 'routes.js', 'store.js']
 }, { prefix: 'dwc/src/' });
 
 archive.finalize();

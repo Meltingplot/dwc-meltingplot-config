@@ -195,7 +195,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 | Persistent data location | `/opt/dsf/sd/MeltingplotConfig/` — survives plugin upgrades (DSF wipes `PLUGIN_DIR`) |
 | Backup strategy | Worktree-based git repo — tracks sys/, macros/, filaments/ in-place |
 | Partial apply | Hunk-level selection — users pick individual change blocks |
-| Protected files | Overrides (`config-override.g`, `temps.g`, `machine-override`) are never overwritten **once they exist on the printer**; a missing one is seeded from the reference (`ConfigManager._is_overwrite_protected`) |
+| Protected files | Overrides (`config-override.g`, `temps.g`, `machine-override`, `global-override.g`) are never overwritten **once they exist on the printer**; a missing one is seeded from the reference (`ConfigManager._is_overwrite_protected`) |
 
 ## HTTP API
 

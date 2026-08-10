@@ -52,6 +52,7 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 PROTECTED_FILES = (
     "sys/meltingplot/machine-override",
     "sys/meltingplot/dsf-config-override.g",
+    "sys/meltingplot/global-override.g",
     # RepRapFirmware's own override file — written by M500, holds the
     # machine's saved parameters.
     "sys/config-override.g",

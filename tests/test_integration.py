@@ -544,6 +544,7 @@ def protected_file_repo(tmp_path):
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
     (mp_dir / "dsf-config-override.g").write_text("M906 X900\n")
+    (mp_dir / "global-override.g").write_text("set global.mp_z_offset = 0.0\n")
     # machine-override is a file without extension
     (mp_dir / "machine-override").write_text("M208 X300 Y300 Z400\n")
 
@@ -575,6 +576,7 @@ def protected_env(tmp_path, protected_file_repo):
     mp_dir = sys_dir / "meltingplot"
     mp_dir.mkdir()
     (mp_dir / "dsf-config-override.g").write_text("M906 X800 ORIGINAL\n")
+    (mp_dir / "global-override.g").write_text("set global.mp_z_offset = 0.42 ORIGINAL\n")
     (mp_dir / "machine-override").write_text("M208 X200 Y200 Z300 ORIGINAL\n")
 
     filament_dir = printer_fs / "filaments" / "PLA"
@@ -619,6 +621,7 @@ class TestProtectedFiles:
 
         assert "sys/config.g" in files_in_diff
         assert "sys/meltingplot/dsf-config-override.g" not in files_in_diff
+        assert "sys/meltingplot/global-override.g" not in files_in_diff
         assert "sys/meltingplot/machine-override" not in files_in_diff
         assert "filaments/PLA/config-override.g" not in files_in_diff
         assert "filaments/PLA/temps.g" not in files_in_diff
@@ -645,6 +648,7 @@ class TestProtectedFiles:
 
         # Protected files should be in skipped, not applied
         assert "sys/meltingplot/dsf-config-override.g" in result["skipped"]
+        assert "sys/meltingplot/global-override.g" in result["skipped"]
         assert "sys/meltingplot/machine-override" in result["skipped"]
         assert "filaments/PLA/config-override.g" in result["skipped"]
         assert "filaments/PLA/temps.g" in result["skipped"]
@@ -653,6 +657,9 @@ class TestProtectedFiles:
         # Protected files should retain their original content
         override_content = (pfs / "sys" / "meltingplot" / "dsf-config-override.g").read_text()
         assert "ORIGINAL" in override_content
+
+        global_content = (pfs / "sys" / "meltingplot" / "global-override.g").read_text()
+        assert "ORIGINAL" in global_content
 
         machine_content = (pfs / "sys" / "meltingplot" / "machine-override").read_text()
         assert "ORIGINAL" in machine_content
@@ -834,10 +841,12 @@ class TestProtectedFilesMissingOnPrinter:
         assert "filaments/PLA/temps.g" in result["applied"]
         assert "sys/config-override.g" in result["applied"]
         assert "sys/meltingplot/machine-override" in result["applied"]
+        assert "sys/meltingplot/global-override.g" in result["applied"]
 
         assert (pfs / "filaments" / "PLA" / "config-override.g").read_text() == "M572 D0 S0.05\n"
         assert (pfs / "filaments" / "PLA" / "temps.g").exists()
         assert (pfs / "sys" / "config-override.g").read_text() == "M307 H0 R0.5\n"
+        assert (pfs / "sys" / "meltingplot" / "global-override.g").exists()
 
     def test_created_file_is_protected_afterwards(self, protected_missing_env):
         """Once created, the file is protected from further updates."""
@@ -875,3 +884,4 @@ class TestProtectedFilesMissingOnPrinter:
         assert "sys/config.g" in files
         assert "filaments/PLA/config-override.g" not in files
         assert "sys/config-override.g" not in files
+        assert "sys/meltingplot/global-override.g" not in files

@@ -462,6 +462,12 @@ class TestIsProtected:
     def test_dsf_config_override(self):
         assert is_protected("sys/meltingplot/dsf-config-override.g") is True
 
+    def test_global_override(self):
+        assert is_protected("sys/meltingplot/global-override.g") is True
+
+    def test_global_override_wrong_directory_not_protected(self):
+        assert is_protected("sys/global-override.g") is False
+
     def test_machine_override_with_extension_not_protected(self):
         """machine-override.g is a different file than machine-override."""
         assert is_protected("sys/meltingplot/machine-override.g") is False

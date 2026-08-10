@@ -116,6 +116,7 @@ reported as `skipped` by *Apply all*:
 - `sys/config-override.g` — RepRapFirmware's own `M500` output
 - `sys/meltingplot/machine-override`
 - `sys/meltingplot/dsf-config-override.g`
+- `sys/meltingplot/global-override.g`
 - `filaments/<profile>/config-override.g` — per-material tuning (pressure advance, retract, …)
 - `filaments/<profile>/temps.g` — per-material temperatures
 

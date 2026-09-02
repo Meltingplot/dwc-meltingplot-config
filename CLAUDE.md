@@ -227,6 +227,52 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 - **Default remote branch:** `main`
 - **Commit messages:** Use clear, descriptive messages summarizing the change
 
+### Always use the PR track
+
+**Never commit or push directly to `main`.** Every change — however small — takes
+the same three steps:
+
+1. **Branch** — create a feature branch off the latest `main`
+2. **PR** — push the branch and open a pull request against `main`
+3. **Merge** — merge that pull request
+
+This applies **even when asked to "merge it into main"**. Such a request means
+"land this change on `main`", not "push straight to `main`" — deliver it by
+opening a PR and merging the PR. A local `git merge` into `main` followed by
+`git push origin main` is never the right way, not even for a clean
+fast-forward, a docs-only edit, or a one-line fix. If a change has already been
+pushed to a branch, that branch still needs a PR before it reaches `main`.
+
+Why: CI runs on the PR before the change lands, the PR is the review record, and
+`main`'s history stays consistent — every commit on `main` arrives through a
+merged PR.
+
+Let CI finish on the PR before merging. If the merge is blocked (branch
+protection, a required review, a failing check), say so and leave the PR open —
+never fall back to pushing to `main`.
+
+### Releases always travel main -> release -> tag
+
+Releases use the same PR track, in three steps, in this order:
+
+1. **PR into `main`** — the change (including the `plugin.json` version bump)
+   lands on `main` through a pull request, exactly as above
+2. **PR from `main` into `release`** — open a pull request with base `release`
+   and head `main`, and merge it. Never push to `release` directly and never
+   cherry-pick onto it; `release` only ever receives commits that are already
+   on `main`
+3. **Tag on a `release` commit** — the `vX.Y.Z` tag must point at a commit on
+   the `release` branch, never at a `main`-only commit
+
+Step 3 is automated: `.github/workflows/release.yml` runs on every push to
+`release`, reads the version from `plugin.json`, and creates the matching
+`vX.Y.Z` tag and GitHub Release itself. So there is no tag to push by hand —
+merging the `main` -> `release` PR is what cuts the release. It refuses to run
+twice for the same version, so the version bump in `plugin.json` must be part
+of what travels through step 1.
+
+Never release from `main`, a feature branch, or a local build.
+
 ## Conventions for AI Assistants
 
 - Frontend: Vue 2.7 + Vuetify 2.7 conventions (DWC 3.6). Use `v-model`, `$set` for reactivity, `mapState`/`mapGetters` for Vuex.

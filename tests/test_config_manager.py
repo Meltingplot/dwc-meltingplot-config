@@ -11,7 +11,9 @@ from config_manager import (
     _friendly_network_error,
     _hunk_summary,
     _parse_hunk_header,
+    _patch_hunks,
     is_protected,
+    normalise_selection,
 )
 
 
@@ -646,3 +648,99 @@ class TestFriendlyNetworkError:
         msg = "unexpected error without colon"
         result = _friendly_network_error(msg)
         assert result == msg
+
+
+# --- Selection payload normalisation ---
+
+
+class TestNormaliseSelection:
+    def test_plain_paths_mean_whole_file(self):
+        entries, error = normalise_selection(["sys/config.g", "macros/start.g"])
+        assert error == ""
+        assert entries == [("sys/config.g", None), ("macros/start.g", None)]
+
+    def test_object_without_hunks_means_whole_file(self):
+        entries, error = normalise_selection([{"file": "sys/config.g"}])
+        assert error == ""
+        assert entries == [("sys/config.g", None)]
+
+    def test_null_hunks_means_whole_file(self):
+        entries, error = normalise_selection([{"file": "sys/config.g", "hunks": None}])
+        assert error == ""
+        assert entries == [("sys/config.g", None)]
+
+    def test_hunk_indices_are_kept(self):
+        entries, error = normalise_selection([{"file": "sys/config.g", "hunks": [0, 2]}])
+        assert error == ""
+        assert entries == [("sys/config.g", [0, 2])]
+
+    def test_empty_hunk_list_is_kept_distinct_from_whole_file(self):
+        entries, error = normalise_selection([{"file": "sys/config.g", "hunks": []}])
+        assert error == ""
+        assert entries == [("sys/config.g", [])]
+
+    def test_mixed_entries(self):
+        entries, error = normalise_selection([
+            "sys/homeall.g",
+            {"file": "sys/config.g", "hunks": [1]},
+        ])
+        assert error == ""
+        assert entries == [("sys/homeall.g", None), ("sys/config.g", [1])]
+
+    @pytest.mark.parametrize("payload", [
+        "sys/config.g",
+        {"file": "sys/config.g"},
+        None,
+        42,
+    ])
+    def test_non_list_payload_is_rejected(self, payload):
+        entries, error = normalise_selection(payload)
+        assert entries == []
+        assert error
+
+    @pytest.mark.parametrize("entry", [
+        "",
+        {},
+        {"file": ""},
+        {"file": 5},
+        {"file": "sys/config.g", "hunks": "0"},
+        {"file": "sys/config.g", "hunks": ["0"]},
+        {"file": "sys/config.g", "hunks": [True]},
+        {"file": "sys/config.g", "hunks": [1.5]},
+        42,
+        None,
+    ])
+    def test_malformed_entries_are_rejected(self, entry):
+        entries, error = normalise_selection([entry])
+        assert entries == []
+        assert error
+
+
+# --- Shared hunk patching loop ---
+
+
+class TestPatchHunks:
+    def test_applies_hunks_in_order_with_offsets(self):
+        content = "a\nb\nc\nd\n"
+        hunks = [
+            {"index": 0, "header": "@@ -1,1 +1,2 @@", "lines": ["-a", "+A", "+A2"]},
+            {"index": 1, "header": "@@ -3,1 +4,1 @@", "lines": ["-c", "+C"]},
+        ]
+        new_content, applied, failed = _patch_hunks(content, hunks)
+        assert applied == [0, 1]
+        assert failed == []
+        assert new_content == "A\nA2\nb\nC\nd\n"
+
+    def test_reports_hunks_whose_context_no_longer_matches(self):
+        content = "a\nb\nc\n"
+        hunks = [{"index": 0, "header": "@@ -1,1 +1,1 @@", "lines": ["-zzz", "+A"]}]
+        new_content, applied, failed = _patch_hunks(content, hunks)
+        assert applied == []
+        assert failed == [0]
+        assert new_content == content
+
+    def test_empty_hunk_list_leaves_content_unchanged(self):
+        new_content, applied, failed = _patch_hunks("a\nb\n", [])
+        assert new_content == "a\nb\n"
+        assert applied == []
+        assert failed == []

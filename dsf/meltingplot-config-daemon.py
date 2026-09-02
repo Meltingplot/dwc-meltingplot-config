@@ -384,6 +384,30 @@ def handle_apply_hunks(_cmd, manager, body, queries):
     return json_response(result)
 
 
+def handle_apply_selection(_cmd, manager, body, _queries):
+    """POST /machine/MeltingplotConfig/applySelection
+
+    Body: {"files": ["sys/config.g", {"file": "sys/homeall.g", "hunks": [0, 2]}]}
+
+    Applies everything the user left selected in one go: whole files for
+    plain entries, only the listed hunks for entries carrying "hunks".
+    Files the user deselected are simply absent from the payload.
+    """
+    try:
+        data = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        return error_response("Invalid JSON body")
+    if not isinstance(data, dict):
+        return error_response("Invalid JSON body")
+    files = data.get("files")
+    if files is None:
+        return error_response("'files' selection required")
+    result = manager.apply_selection(files)
+    if "error" in result:
+        return error_response(result["error"])
+    return json_response(result)
+
+
 def handle_manual_backup(_cmd, manager, body, _queries):
     """POST /machine/MeltingplotConfig/manualBackup
 
@@ -520,6 +544,7 @@ ENDPOINTS = {
     ("POST", "manualBackup"): handle_manual_backup,
     ("POST", "apply"): handle_apply,
     ("POST", "applyHunks"): handle_apply_hunks,
+    ("POST", "applySelection"): handle_apply_selection,
     ("GET", "backup"): handle_backup,
     ("GET", "backupDownload"): handle_backup_download,
     ("GET", "backupFileContent"): handle_backup_file_content,

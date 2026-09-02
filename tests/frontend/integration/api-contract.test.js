@@ -77,6 +77,24 @@ const APPLY_HUNKS_RESPONSE = {
   failed: [1]
 }
 
+const APPLY_SELECTION_REQUEST = {
+  files: [
+    { file: 'sys/homex.g' },
+    { file: 'sys/config.g', hunks: [0, 2] }
+  ]
+}
+
+const APPLY_SELECTION_RESPONSE = {
+  applied: ['sys/homex.g', 'sys/config.g'],
+  partial: {
+    'sys/config.g': { applied: [0], failed: [2] }
+  },
+  skipped: ['sys/config-override.g'],
+  errors: {
+    'sys/config-override.g': 'Protected file cannot be overwritten: sys/config-override.g'
+  }
+}
+
 const BACKUPS_RESPONSE = {
   backups: [
     {
@@ -285,6 +303,70 @@ describe('API contract: /applyHunks response', () => {
     expect(Array.isArray(APPLY_HUNKS_RESPONSE.failed)).toBe(true)
     APPLY_HUNKS_RESPONSE.applied.forEach(i => expect(typeof i).toBe('number'))
     APPLY_HUNKS_RESPONSE.failed.forEach(i => expect(typeof i).toBe('number'))
+  })
+})
+
+describe('API contract: /applySelection request', () => {
+  it('sends a files array of whole-file or hunk-limited entries', () => {
+    assertHasKeys(APPLY_SELECTION_REQUEST, ['files'])
+    expect(Array.isArray(APPLY_SELECTION_REQUEST.files)).toBe(true)
+    APPLY_SELECTION_REQUEST.files.forEach(entry => {
+      expect(typeof entry.file).toBe('string')
+      if ('hunks' in entry) {
+        expect(Array.isArray(entry.hunks)).toBe(true)
+        entry.hunks.forEach(i => expect(typeof i).toBe('number'))
+      }
+    })
+  })
+
+  it('matches what ConfigDiff builds from its selection state', () => {
+    // Mirrors ConfigDiff.selectionState: a bare { file } applies the whole
+    // file, { file, hunks } narrows it to the listed hunk indices.
+    const wholeFile = APPLY_SELECTION_REQUEST.files[0]
+    const partialFile = APPLY_SELECTION_REQUEST.files[1]
+    expect(Object.keys(wholeFile)).toEqual(['file'])
+    expect(Object.keys(partialFile).sort()).toEqual(['file', 'hunks'])
+  })
+})
+
+describe('API contract: /applySelection response', () => {
+  it('has an applied array of file paths', () => {
+    assertHasKeys(APPLY_SELECTION_RESPONSE, ['applied'])
+    expect(Array.isArray(APPLY_SELECTION_RESPONSE.applied)).toBe(true)
+    APPLY_SELECTION_RESPONSE.applied.forEach(p => expect(typeof p).toBe('string'))
+  })
+
+  it('reports per-file hunk results under partial', () => {
+    Object.keys(APPLY_SELECTION_RESPONSE.partial).forEach(file => {
+      const entry = APPLY_SELECTION_RESPONSE.partial[file]
+      assertHasKeys(entry, ['applied', 'failed'])
+      entry.applied.forEach(i => expect(typeof i).toBe('number'))
+      entry.failed.forEach(i => expect(typeof i).toBe('number'))
+    })
+  })
+
+  it('reports skipped files with a reason', () => {
+    expect(Array.isArray(APPLY_SELECTION_RESPONSE.skipped)).toBe(true)
+    APPLY_SELECTION_RESPONSE.skipped.forEach(file => {
+      expect(typeof APPLY_SELECTION_RESPONSE.errors[file]).toBe('string')
+    })
+  })
+
+  it('counts failed hunks the way MeltingplotConfig does', () => {
+    const partial = APPLY_SELECTION_RESPONSE.partial
+    const failedHunks = Object.keys(partial).reduce(
+      (sum, key) => sum + ((partial[key].failed || []).length), 0
+    )
+    expect(failedHunks).toBe(1)
+  })
+
+  it('partial, skipped and errors are optional', () => {
+    const minimal = { applied: ['sys/config.g'] }
+    const failedHunks = Object.keys(minimal.partial || {}).reduce(
+      (sum, key) => sum + ((minimal.partial[key].failed || []).length), 0
+    )
+    expect(failedHunks).toBe(0)
+    expect((minimal.skipped || []).length).toBe(0)
   })
 })
 

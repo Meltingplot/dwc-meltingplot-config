@@ -18,10 +18,18 @@
         <v-chip small class="mr-2" color="warning" outlined>
           {{ changedFiles.length }} file{{ changedFiles.length !== 1 ? 's' : '' }} changed
         </v-chip>
+        <v-chip v-if="selectionState.excludedFiles > 0" small class="mr-2" outlined>
+          {{ selectionState.excludedFiles }} excluded
+        </v-chip>
+        <v-chip v-if="selectionState.partialFiles > 0" small class="mr-2" color="primary" outlined>
+          {{ selectionState.partialFiles }} partial
+        </v-chip>
         <v-spacer />
-        <v-btn color="primary" small @click="$emit('apply-all')">
-          <v-icon left small>mdi-check-all</v-icon>
-          Apply All
+        <v-btn x-small text class="mr-1" @click="selectAllFiles">Select all files</v-btn>
+        <v-btn x-small text class="mr-2" @click="deselectAllFiles">Deselect all files</v-btn>
+        <v-btn color="primary" small :disabled="applyDisabled" @click="emitApply">
+          <v-icon left small>{{ isPartialApply ? 'mdi-check' : 'mdi-check-all' }}</v-icon>
+          {{ applyButtonLabel }}
         </v-btn>
       </v-toolbar>
 
@@ -29,16 +37,41 @@
         <v-expansion-panel v-for="file in changedFiles" :key="file.file">
           <v-expansion-panel-header @click="loadFileDetail(file)">
             <div class="d-flex align-center">
+              <!-- Clicks must not reach the header, which toggles the panel -->
+              <div v-if="file.status !== 'extra'" class="mr-2" @click.stop>
+                <v-checkbox
+                  :input-value="fileChecked(file)"
+                  :indeterminate="fileIsPartial(file)"
+                  :title="fileChecked(file) ? 'Exclude this file from the apply' : 'Include this file in the apply'"
+                  dense
+                  hide-details
+                  class="mt-0 pt-0"
+                  @change="setFileSelected(file, $event)"
+                />
+              </div>
               <v-icon small :color="fileStatusColor(file.status)" class="mr-2">
                 {{ fileStatusIcon(file.status) }}
               </v-icon>
-              <span class="font-weight-medium">{{ file.file }}</span>
+              <span class="font-weight-medium" :class="{ 'file-excluded': !fileChecked(file) && file.status !== 'extra' }">
+                {{ file.file }}
+              </span>
               <v-chip x-small class="ml-2" :color="fileStatusColor(file.status)" outlined>
                 {{ file.status }}
               </v-chip>
               <span v-if="file.hunks" class="ml-2 caption grey--text">
                 {{ file.hunks.length }} change{{ file.hunks.length !== 1 ? 's' : '' }}
               </span>
+              <v-chip
+                v-if="file.status !== 'extra' && !fileChecked(file)"
+                x-small
+                class="ml-2"
+                outlined
+              >
+                excluded
+              </v-chip>
+              <v-chip v-else-if="fileIsPartial(file)" x-small class="ml-2" color="primary" outlined>
+                {{ selectedHunkCount(file) }} of {{ file.hunks.length }} selected
+              </v-chip>
             </div>
           </v-expansion-panel-header>
 
@@ -60,8 +93,13 @@
               </div>
               <!-- Modified file: hunk selection toolbar -->
               <v-toolbar v-else flat dense class="mb-2">
-                <v-btn x-small text @click="selectAllHunks(file)">Select all</v-btn>
-                <v-btn x-small text @click="deselectAllHunks(file)">Deselect all</v-btn>
+                <!-- Hunk picking is inert while the whole file is excluded -->
+                <v-btn x-small text :disabled="file.selected === false" @click="selectAllHunks(file)">
+                  Select all
+                </v-btn>
+                <v-btn x-small text :disabled="file.selected === false" @click="deselectAllHunks(file)">
+                  Deselect all
+                </v-btn>
                 <v-spacer />
                 <v-btn
                   v-if="selectedHunkCount(file) > 0 && selectedHunkCount(file) < file.hunks.length"
@@ -99,7 +137,14 @@
                       <tr :key="'sep-' + hunk.index" class="hunk-separator-row">
                         <td colspan="4" class="hunk-separator">
                           <div class="d-flex align-center">
-                            <v-checkbox v-if="file.status !== 'missing'" v-model="hunk.selected" dense hide-details class="mt-0 pt-0 mr-2" />
+                            <v-checkbox
+                              v-if="file.status !== 'missing'"
+                              v-model="hunk.selected"
+                              :disabled="file.selected === false"
+                              dense
+                              hide-details
+                              class="mt-0 pt-0 mr-2"
+                            />
                             <v-icon x-small class="mr-1 hunk-fold-icon">mdi-dots-vertical</v-icon>
                             <code class="hunk-range">{{ hunk.header }}</code>
                             <span v-if="hunk.summary" class="ml-2 caption grey--text">{{ hunk.summary }}</span>
@@ -176,11 +221,66 @@ export default {
   computed: {
     changedFiles() {
       return this.files.filter(f => f.status !== 'unchanged')
+    },
+    /**
+     * What the top-level apply button would send, derived from the
+     * per-file and per-hunk checkboxes.
+     *
+     * - files: payload entries — a bare { file } applies the whole file,
+     *   { file, hunks } applies only the selected hunks of that file
+     * - excludedFiles: files the user dropped completely
+     * - partialFiles: files where only some hunks are selected
+     */
+    selectionState() {
+      const files = []
+      let excludedFiles = 0
+      let partialFiles = 0
+
+      for (const file of this.changedFiles) {
+        // 'extra' files exist only on the printer — nothing to apply
+        if (file.status === 'extra') continue
+
+        if (!this.fileChecked(file)) {
+          excludedFiles++
+          continue
+        }
+
+        if (file.status === 'modified' && this.hasHunkDetail(file)) {
+          const selected = file.hunks.filter(h => h.selected)
+          if (selected.length < file.hunks.length) {
+            partialFiles++
+            files.push({ file: file.file, hunks: selected.map(h => h.index) })
+            continue
+          }
+        }
+
+        files.push({ file: file.file })
+      }
+
+      return { files, excludedFiles, partialFiles }
+    },
+    isPartialApply() {
+      return this.selectionState.excludedFiles > 0 || this.selectionState.partialFiles > 0
+    },
+    applyButtonLabel() {
+      return this.isPartialApply ? 'Partially Apply' : 'Apply All'
+    },
+    applyDisabled() {
+      return this.selectionState.files.length === 0
     }
   },
   watch: {
-    files() {
-      this.expandedPanels = []
+    files: {
+      handler(files) {
+        this.expandedPanels = []
+        // Everything starts selected; the user opts changes out.
+        files.forEach(file => {
+          if (file.selected === undefined) {
+            this.$set(file, 'selected', true)
+          }
+        })
+      },
+      immediate: true
     }
   },
   methods: {
@@ -272,11 +372,57 @@ export default {
         const response = await fetch(`${API_BASE}/diff?file=${encodeURIComponent(file.file)}`)
         if (!response.ok) throw new Error(response.statusText)
         const data = await response.json()
-        this.$set(file, 'hunks', (data.hunks || []).map(h => ({ ...h, selected: true })))
+        const selected = file.selected !== false
+        this.$set(file, 'hunks', (data.hunks || []).map(h => ({ ...h, selected })))
       } catch {
         this.$set(file, 'hunks', [])
       } finally {
         this.$set(file, 'loadingDetail', false)
+      }
+    },
+    hasHunkDetail(file) {
+      // diff_all returns summary hunks (index + header); only detail
+      // hunks carry `lines` and therefore a usable `selected` flag.
+      return !!(file.hunks && file.hunks.length > 0 && file.hunks[0].lines)
+    },
+    fileChecked(file) {
+      if (file.selected === false) return false
+      if (file.status === 'modified' && this.hasHunkDetail(file)) {
+        // Deselecting every hunk drops the file just like unchecking it
+        return file.hunks.some(h => h.selected)
+      }
+      return true
+    },
+    fileIsPartial(file) {
+      if (file.selected === false) return false
+      if (file.status !== 'modified' || !this.hasHunkDetail(file)) return false
+      const count = this.selectedHunkCount(file)
+      return count > 0 && count < file.hunks.length
+    },
+    setFileSelected(file, value) {
+      const selected = value !== false
+      this.$set(file, 'selected', selected)
+      if (this.hasHunkDetail(file)) {
+        file.hunks.forEach(h => { this.$set(h, 'selected', selected) })
+      }
+    },
+    selectAllFiles() {
+      this.changedFiles
+        .filter(f => f.status !== 'extra')
+        .forEach(f => this.setFileSelected(f, true))
+    },
+    deselectAllFiles() {
+      this.changedFiles
+        .filter(f => f.status !== 'extra')
+        .forEach(f => this.setFileSelected(f, false))
+    },
+    emitApply() {
+      const { files, excludedFiles, partialFiles } = this.selectionState
+      if (files.length === 0) return
+      if (excludedFiles === 0 && partialFiles === 0) {
+        this.$emit('apply-all')
+      } else {
+        this.$emit('apply-selection', { files, excludedFiles, partialFiles })
       }
     },
     selectAllHunks(file) {
@@ -302,6 +448,10 @@ export default {
 </script>
 
 <style scoped>
+.file-excluded {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
 .diff-file-block {
   border: 1px solid #e0e0e0;
   border-radius: 4px;

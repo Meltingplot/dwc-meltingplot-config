@@ -199,6 +199,47 @@ class TestHandlers:
         resp = daemon.handle_apply_hunks(cmd, manager, "not json", {"file": "sys/config.g"})
         assert resp["status"] == 400
 
+    def test_apply_selection(self):
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        manager = MagicMock()
+        manager.apply_selection.return_value = {
+            "applied": ["sys/config.g", "sys/homeall.g"],
+            "partial": {"sys/config.g": {"applied": [0], "failed": []}},
+        }
+
+        selection = [{"file": "sys/config.g", "hunks": [0]}, {"file": "sys/homeall.g"}]
+        resp = daemon.handle_apply_selection(cmd, manager, json.dumps({"files": selection}), {})
+        assert resp["status"] == 200
+        manager.apply_selection.assert_called_once_with(selection)
+
+    def test_apply_selection_missing_files_key(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_apply_selection(MagicMock(), MagicMock(), "{}", {})
+        assert resp["status"] == 400
+        assert "files" in json.loads(resp["body"])["error"]
+
+    def test_apply_selection_invalid_json(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_apply_selection(MagicMock(), MagicMock(), "not json", {})
+        assert resp["status"] == 400
+
+    def test_apply_selection_non_object_body(self):
+        daemon = _import_daemon()
+        resp = daemon.handle_apply_selection(MagicMock(), MagicMock(), "[1, 2]", {})
+        assert resp["status"] == 400
+
+    def test_apply_selection_manager_error(self):
+        daemon = _import_daemon()
+        manager = MagicMock()
+        manager.apply_selection.return_value = {"error": "No files selected"}
+
+        resp = daemon.handle_apply_selection(
+            MagicMock(), manager, json.dumps({"files": []}), {}
+        )
+        assert resp["status"] == 400
+        assert json.loads(resp["body"])["error"] == "No files selected"
+
     def test_settings_post(self):
         daemon = _import_daemon()
         cmd = MagicMock()
@@ -387,6 +428,7 @@ class TestEndpointRegistry:
         assert ("POST", "manualBackup") in endpoints
         assert ("POST", "apply") in endpoints
         assert ("POST", "applyHunks") in endpoints
+        assert ("POST", "applySelection") in endpoints
         assert ("GET", "backup") in endpoints
         assert ("GET", "backupDownload") in endpoints
         assert ("GET", "backupFileContent") in endpoints

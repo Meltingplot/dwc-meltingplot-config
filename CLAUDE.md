@@ -154,6 +154,7 @@ Our testing strategy fills this gap with four layers:
   - `backend.test.js` — SBC backend PID detection and auto-start recovery
   - `ConfigStatus.test.js` — Props rendering, status mapping, button state, events
   - `ConfigDiff.test.js` — File filtering, hunk selection/deselection, emit payloads, side-by-side diff logic
+  - `ConfigDiffSelection.test.js` — Partial-apply selection state: file/hunk checkboxes, `Apply All` ↔ `Partially Apply`, emitted payload
   - `BackupHistory.test.js` — Empty/loading states, backup display, expand/collapse, fetch mocking
 - **Integration tests (in `tests/frontend/integration/`):**
   - `full-mount.test.js` — Full component tree with real Vuetify
@@ -194,7 +195,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 | Backend runtime | Python SBC daemon via DSF (venv with `sbcPythonDependencies`) |
 | Persistent data location | `/opt/dsf/sd/MeltingplotConfig/` — survives plugin upgrades (DSF wipes `PLUGIN_DIR`) |
 | Backup strategy | Worktree-based git repo — tracks sys/, macros/, filaments/ in-place |
-| Partial apply | Hunk-level selection — users pick individual change blocks |
+| Partial apply | File- and hunk-level deselection — *Apply All* becomes *Partially Apply* and skips what the user unchecked (`POST /applySelection`) |
 | Protected files | Overrides (`config-override.g`, `temps.g`, `machine-override`, `global-override.g`) are never overwritten **once they exist on the printer**; a missing one is seeded from the reference (`ConfigManager._is_overwrite_protected`) |
 
 ## HTTP API
@@ -208,6 +209,13 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 - `GET /branches` — list available branches
 - `POST /apply` — apply all changes (with backup); with `?file=<path>` applies single file
 - `POST /applyHunks?file=<path>` — apply selected hunks (body: `{"hunks": [0, 2, 5]}`)
+- `POST /applySelection` — apply a mixed selection across files in one pass, under a single
+  backup pair (body: `{"files": ["sys/homeall.g", {"file": "sys/config.g", "hunks": [0, 2]}]}`).
+  A bare path (or an entry without `hunks`) applies the whole file; an entry with `hunks`
+  applies only those hunk indices. Files the user excluded are simply absent from the payload.
+  Response: `{"applied": [...], "partial": {path: {"applied": [...], "failed": [...]}},
+  "skipped": [...], "errors": {path: reason}}` — `partial`, `skipped` and `errors` are omitted
+  when empty.
 - `GET /backups` — backup history
 - `GET /backup?hash=<hash>` — backup file list
 - `GET /backupDownload?hash=<hash>` — download backup as ZIP
@@ -237,7 +245,7 @@ All endpoints are under `/machine/MeltingplotConfig/`. Each endpoint is register
 
 These patterns have caused real bugs in this project. Be aware of them:
 
-1. **Summary hunks vs detail hunks:** `diff_all()` returns summary hunks `{index, header}` only. `diff_file()` returns full hunks with `{index, header, lines, summary}`. Frontend guard logic must check for `hunk.lines` (not just `hunk` truthiness) to decide whether to fetch detail.
+1. **Summary hunks vs detail hunks:** `diff_all()` returns summary hunks `{index, header}` only. `diff_file()` returns full hunks with `{index, header, lines, summary}`. Frontend guard logic must check for `hunk.lines` (not just `hunk` truthiness) to decide whether to fetch detail. `ConfigDiff.hasHunkDetail(file)` encodes this check — a file whose panel was never expanded has no per-hunk `selected` flags, so it always applies as a whole file.
 2. **Monkey-patch import order in tests:** The dsf-python monkey-patch in the daemon imports `dsf.object_model.plugins.plugin_manifest` at module level. Tests that mock `dsf.*` modules must set up mocks **before** importing the daemon. The monkey-patch is wrapped in `try/except ImportError: pass` for this reason.
 3. **File I/O on printer:** The daemon resolves virtual paths at startup (`cmd.resolve_path("0:/sys")` → `"/opt/dsf/sd/sys"`). ConfigManager stores this mapping and uses filesystem I/O. If `resolve_path()` fails, the default mapping (`DEFAULT_RESOLVED_DIRS`) is used.
 4. **Directory mapping trailing slashes:** DSF Directories values lack trailing slashes (`"0:/sys"`). The daemon adds them (`"0:/sys/"`). The reference repo folder name is extracted after the `:/` separator.

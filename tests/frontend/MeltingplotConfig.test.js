@@ -629,6 +629,100 @@ describe('MeltingplotConfig', () => {
         });
     });
 
+    describe('applySelection', () => {
+        const selection = {
+            files: [{ file: 'sys/config.g', hunks: [0, 2] }, { file: 'sys/homeall.g' }],
+            excludedFiles: 1,
+            partialFiles: 1
+        };
+
+        it('opens a confirmation dialog naming what is skipped', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.applySelection(selection);
+
+            expect(wrapper.vm.confirmDialog.show).toBe(true);
+            expect(wrapper.vm.confirmDialog.title).toBe('Partially Apply Changes');
+            expect(wrapper.vm.confirmDialog.message).toContain('2 files');
+            expect(wrapper.vm.confirmDialog.message).toContain('1 file stays untouched');
+            expect(wrapper.vm.confirmDialog.message).toContain('only gets the selected changes');
+        });
+
+        it('posts the selection to /applySelection', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            await new Promise(r => setTimeout(r, 0));
+
+            wrapper.vm.applySelection(selection);
+
+            mockFetchSuccess({ applied: ['sys/config.g', 'sys/homeall.g'] });
+            await wrapper.vm.confirmDialog.action();
+
+            const call = global.fetch.mock.calls.find(c => c[0].includes('/applySelection'));
+            expect(call).toBeTruthy();
+            expect(call[1].method).toBe('POST');
+            expect(JSON.parse(call[1].body)).toEqual({ files: selection.files });
+            expect(wrapper.vm.snackbar.color).toBe('success');
+            expect(wrapper.vm.snackbar.text).toContain('2 files');
+        });
+
+        it('warns when the backend skipped files', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.applySelection(selection);
+
+            mockFetchSuccess({
+                applied: ['sys/homeall.g'],
+                skipped: ['sys/config.g'],
+                errors: { 'sys/config.g': 'Protected file cannot be overwritten' }
+            });
+            await wrapper.vm.confirmDialog.action();
+
+            expect(wrapper.vm.snackbar.color).toBe('warning');
+            expect(wrapper.vm.snackbar.text).toContain('1 file skipped');
+        });
+
+        it('warns when individual hunks conflicted', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.applySelection(selection);
+
+            mockFetchSuccess({
+                applied: ['sys/config.g'],
+                partial: { 'sys/config.g': { applied: [0], failed: [2] } }
+            });
+            await wrapper.vm.confirmDialog.action();
+
+            expect(wrapper.vm.snackbar.color).toBe('warning');
+            expect(wrapper.vm.snackbar.text).toContain('1 change failed (conflict)');
+        });
+
+        it('reports an error when the request fails', async () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.applySelection(selection);
+
+            mockFetchError(400, 'No files selected');
+            await wrapper.vm.confirmDialog.action();
+
+            expect(wrapper.vm.snackbar.color).toBe('error');
+            expect(wrapper.vm.snackbar.text).toContain('Apply failed');
+        });
+
+        it('omits the skip notes when only hunks were deselected', () => {
+            mockFetchSuccess({ branches: [] });
+            const wrapper = mountComponent();
+            wrapper.vm.applySelection({
+                files: [{ file: 'sys/config.g', hunks: [0] }],
+                excludedFiles: 0,
+                partialFiles: 1
+            });
+
+            expect(wrapper.vm.confirmDialog.message).toContain('1 file?');
+            expect(wrapper.vm.confirmDialog.message).not.toContain('untouched');
+        });
+    });
+
     describe('restoreBackup', () => {
         it('opens confirmation dialog', () => {
             mockFetchSuccess({ branches: [] });

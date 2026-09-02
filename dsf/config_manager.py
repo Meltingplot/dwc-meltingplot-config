@@ -534,22 +534,7 @@ class ConfigManager:
 
         self._create_backup(f"Pre-update backup for {ref_path} (partial)")
 
-        result_lines = printer_content.splitlines(keepends=True)
-        applied = []
-        failed = []
-        offset = 0
-
-        for hunk in selected:
-            success, result_lines, new_offset = _apply_single_hunk(
-                result_lines, hunk, offset
-            )
-            if success:
-                applied.append(hunk["index"])
-                offset = new_offset
-            else:
-                failed.append(hunk["index"])
-
-        new_content = "".join(result_lines)
+        new_content, applied, failed = _patch_hunks(printer_content, selected)
         self._write_printer_file(printer_path, new_content)
 
         desc = f"Applied {len(applied)} hunk(s) to {ref_path}"
@@ -558,6 +543,96 @@ class ConfigManager:
         self._create_backup(desc)
 
         return {"applied": applied, "failed": failed}
+
+    def apply_selection(self, selection):
+        """Apply a user-chosen subset of the reference config (with backup).
+
+        ``selection`` lists only the files the user kept selected — anything
+        left out stays untouched on the printer.  Each entry is either a
+        reference path (apply the whole file) or a dict
+        ``{"file": <ref_path>, "hunks": [<index>, ...]}`` which narrows the
+        update to the listed hunks of that file.
+
+        Exactly one backup is taken before and one after the whole
+        selection, so a partial apply yields a single restore point instead
+        of one per file.
+
+        Returns a dict with ``applied`` (files that were updated),
+        ``partial`` (per-file hunk results), ``skipped`` (requested files
+        that were not updated) and ``errors`` (reason per skipped file).
+        """
+        if not os.path.isdir(os.path.join(REFERENCE_DIR, ".git")):
+            return {"error": "Reference repository not cloned"}
+
+        entries, parse_error = normalise_selection(selection)
+        if parse_error:
+            return {"error": parse_error}
+        if not entries:
+            return {"error": "No files selected"}
+
+        self._create_backup("Pre-update backup (partial apply)")
+
+        applied = []
+        partial = {}
+        skipped = []
+        errors = {}
+
+        def skip(ref_path, reason):
+            skipped.append(ref_path)
+            errors[ref_path] = reason
+
+        for ref_path, hunk_indices in entries:
+            printer_path = self._ref_to_printer_path(ref_path)
+            if printer_path is None:
+                skip(ref_path, f"Unknown reference path: {ref_path}")
+                continue
+
+            if self._is_overwrite_protected(ref_path, printer_path):
+                skip(ref_path, f"Protected file cannot be overwritten: {ref_path}")
+                continue
+
+            ref_content = self._read_reference_file(ref_path)
+            if ref_content is None:
+                skip(ref_path, f"Reference file not found: {ref_path}")
+                continue
+
+            printer_content = self._read_printer_file(printer_path)
+
+            # Whole-file apply — either no hunks were selected away, or the
+            # file does not exist on the printer yet and there is nothing
+            # to patch into.
+            if hunk_indices is None or printer_content is None:
+                self._write_printer_file(printer_path, ref_content)
+                applied.append(ref_path)
+                continue
+
+            hunks = self._compute_hunks(ref_path, printer_content, ref_content)
+            selected = [h for h in hunks if h["index"] in hunk_indices]
+            if not selected:
+                skip(ref_path, f"No valid hunks selected for {ref_path}")
+                continue
+
+            new_content, ok, bad = _patch_hunks(printer_content, selected)
+            partial[ref_path] = {"applied": ok, "failed": bad}
+            if ok:
+                self._write_printer_file(printer_path, new_content)
+                applied.append(ref_path)
+            else:
+                skip(ref_path, f"No selected change could be applied to {ref_path}")
+
+        branch = self.get_active_branch()
+        desc = f"Partially applied reference {branch}: {len(applied)} file(s)"
+        if skipped:
+            desc += f", {len(skipped)} skipped"
+        self._create_backup(desc)
+
+        result = {"applied": applied}
+        if partial:
+            result["partial"] = partial
+        if skipped:
+            result["skipped"] = skipped
+            result["errors"] = errors
+        return result
 
     # --- Backups ---
 
@@ -781,6 +856,77 @@ def _apply_single_hunk(lines, hunk, offset):
     )
     new_offset = offset + len(new_lines) - len(old_lines)
     return True, new_file_lines, new_offset
+
+
+def _patch_hunks(content, hunks):
+    """Apply a list of hunks to file content.
+
+    Hunks are applied in order; each successful hunk shifts the line offset
+    for the ones that follow.  A hunk whose context no longer matches is
+    reported as failed and leaves the content untouched.
+
+    Returns ``(new_content, applied_indices, failed_indices)``.
+    """
+    lines = content.splitlines(keepends=True)
+    applied = []
+    failed = []
+    offset = 0
+
+    for hunk in hunks:
+        success, lines, new_offset = _apply_single_hunk(lines, hunk, offset)
+        if success:
+            applied.append(hunk["index"])
+            offset = new_offset
+        else:
+            failed.append(hunk["index"])
+
+    return "".join(lines), applied, failed
+
+
+def normalise_selection(selection):
+    """Validate and normalise an apply-selection payload.
+
+    Accepts a list whose entries are either a reference path (apply the
+    whole file) or a dict ``{"file": <ref_path>, "hunks": [<index>, ...]}``
+    (apply only the listed hunks).  An entry without ``hunks`` — or with
+    ``hunks`` set to ``None`` — means the whole file.
+
+    Returns ``(entries, error)`` where each entry is a
+    ``(ref_path, hunk_indices_or_None)`` tuple.  ``error`` is an empty
+    string when the payload is valid.
+    """
+    if not isinstance(selection, list):
+        return [], "Selection must be a list of files"
+
+    entries = []
+    for item in selection:
+        if isinstance(item, str):
+            if not item:
+                return [], "Selection entries need a file path"
+            entries.append((item, None))
+            continue
+
+        if not isinstance(item, dict):
+            return [], "Selection entries must be a path or an object"
+
+        ref_path = item.get("file", "")
+        if not ref_path or not isinstance(ref_path, str):
+            return [], "Selection entries need a 'file' path"
+
+        hunks = item.get("hunks")
+        if hunks is None:
+            entries.append((ref_path, None))
+            continue
+
+        # bool is a subclass of int — reject it explicitly
+        if not isinstance(hunks, list) or not all(
+            isinstance(h, int) and not isinstance(h, bool) for h in hunks
+        ):
+            return [], f"'hunks' for {ref_path} must be a list of indices"
+
+        entries.append((ref_path, hunks))
+
+    return entries, ""
 
 
 def _hunk_summary(hunk):

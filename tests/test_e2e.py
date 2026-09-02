@@ -367,6 +367,90 @@ class TestE2EHunkApplyFlow:
         assert resp["status"] == 400
 
 
+class TestE2EApplySelectionFlow:
+    """Partial apply across files: keep some, drop others, in one request."""
+
+    def test_deselected_file_stays_untouched(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        pfs = e2e_env["printer_fs"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        # Make homex.g differ too, so there is something to leave out
+        (pfs / "sys" / "homex.g").write_text("G91\nG1 H1 X-999 F3000\n")
+        untouched = (pfs / "sys" / "homex.g").read_text()
+
+        body = json.dumps({"files": [{"file": "sys/config.g"}]})
+        resp = d.handle_apply_selection(cmd, mgr, body, {})
+        assert resp["status"] == 200
+        result = _body(resp)
+
+        assert result["applied"] == ["sys/config.g"]
+        assert "M906 X1000 Y1000" in (pfs / "sys" / "config.g").read_text()
+        assert (pfs / "sys" / "homex.g").read_text() == untouched
+
+    def test_deselected_hunk_stays_untouched(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        pfs = e2e_env["printer_fs"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        diff_body = _body(d.handle_diff(cmd, mgr, "", {"file": "sys/config.g"}))
+        indices = [h["index"] for h in diff_body["hunks"]]
+        assert indices
+
+        # Send an empty hunk list -> nothing applies, file is reported skipped
+        body = json.dumps({"files": [{"file": "sys/config.g", "hunks": []}]})
+        resp = d.handle_apply_selection(cmd, mgr, body, {})
+        assert resp["status"] == 200
+        result = _body(resp)
+
+        assert result["applied"] == []
+        assert result["skipped"] == ["sys/config.g"]
+        assert "M906 X800 Y800" in (pfs / "sys" / "config.g").read_text()
+
+    def test_selected_hunk_is_applied(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        pfs = e2e_env["printer_fs"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        body = json.dumps({"files": [{"file": "sys/config.g", "hunks": [0]}]})
+        resp = d.handle_apply_selection(cmd, mgr, body, {})
+        assert resp["status"] == 200
+        result = _body(resp)
+
+        assert result["applied"] == ["sys/config.g"]
+        assert result["partial"]["sys/config.g"]["applied"] == [0]
+        assert "M906 X1000 Y1000" in (pfs / "sys" / "config.g").read_text()
+
+    def test_response_shape_matches_frontend_contract(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+
+        body = json.dumps({"files": [{"file": "sys/config.g"}, "nowhere/nope.g"]})
+        result = _body(d.handle_apply_selection(cmd, mgr, body, {}))
+
+        assert isinstance(result["applied"], list)
+        assert isinstance(result["skipped"], list)
+        assert isinstance(result["errors"], dict)
+        for path in result["skipped"]:
+            assert isinstance(result["errors"][path], str)
+
+    def test_missing_files_key_is_rejected(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        resp = d.handle_apply_selection(cmd, mgr, "{}", {})
+        assert resp["status"] == 400
+
+    def test_invalid_json_is_rejected(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        resp = d.handle_apply_selection(cmd, mgr, "not json", {})
+        assert resp["status"] == 400
+
+    def test_empty_selection_is_rejected(self, e2e_env):
+        d, cmd, mgr = e2e_env["daemon"], e2e_env["cmd"], e2e_env["manager"]
+        d.handle_sync(cmd, mgr, "", {})
+        resp = d.handle_apply_selection(cmd, mgr, json.dumps({"files": []}), {})
+        assert resp["status"] == 400
+
+
 class TestE2EBackupRestoreFlow:
     """Full backup/restore cycle through handlers."""
 

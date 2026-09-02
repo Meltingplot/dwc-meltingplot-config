@@ -396,6 +396,11 @@ class TestApplyAll:
             result = manager.apply_all()
         assert "error" in result
 
+    def test_apply_selection_repo_not_cloned(self, manager):
+        with patch("config_manager.REFERENCE_DIR", "/nonexistent"):
+            result = manager.apply_selection(["sys/config.g"])
+        assert "error" in result
+
     def test_apply_all_writes_all_managed_files(self, manager, printer_fs, tmp_path):
         git_dir = tmp_path / ".git"
         git_dir.mkdir()

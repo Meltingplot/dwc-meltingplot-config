@@ -7,6 +7,8 @@ A DWC + DSF plugin that keeps Meltingplot 3D printer configurations up to date.
 - **Syncs** reference configurations from a git repository (one repo per printer model, one branch per firmware version)
 - **Diffs** the reference against the printer's current config, showing changes at the hunk level
 - **Applies** updates — all at once, per file, or by selecting individual change blocks
+- **Partially applies** — deselect any file or hunk you want to keep and *Apply All* becomes
+  *Partially Apply*, updating everything else in a single pass
 - **Backs up** every config change in a local git repository with full history and restore
 
 ## Requirements
@@ -129,6 +131,19 @@ is nothing to preserve, so it shows up in the diff view as `missing` and is crea
 from the reference by *Create File* or *Apply all*. Once created, it is protected
 from all further reference updates.
 
+## Partial apply
+
+Everything on the **Changes** tab starts selected. Uncheck a file in its header — or
+uncheck individual hunks inside a file — and the toolbar button changes from
+**Apply All** to **Partially Apply**. Pressing it sends only what is still selected to
+`POST /applySelection`: whole files for the ones you left alone, just the checked hunks
+for the ones you narrowed down, and nothing at all for the files you excluded. The whole
+selection is written under a single pair of backup commits, so one partial apply is one
+restore point.
+
+Unchecking every hunk in a file is the same as unchecking the file. Files marked `extra`
+(present on the printer but not in the reference) are never applied and have no checkbox.
+
 ## API Endpoints
 
 All endpoints are under `/machine/MeltingplotConfig/`. Dynamic parameters use query strings (DSF uses exact path matching, no path parameters).
@@ -144,6 +159,7 @@ All endpoints are under `/machine/MeltingplotConfig/`. Dynamic parameters use qu
 | `POST` | `/machine/MeltingplotConfig/apply` | Apply all reference config (with backup) |
 | `POST` | `/machine/MeltingplotConfig/apply?file=<path>` | Apply a single file (with backup) |
 | `POST` | `/machine/MeltingplotConfig/applyHunks?file=<path>` | Apply selected hunks (body: `{"hunks": [0, 2, 5]}`) |
+| `POST` | `/machine/MeltingplotConfig/applySelection` | Apply a mixed selection in one pass (body: `{"files": ["sys/homeall.g", {"file": "sys/config.g", "hunks": [0, 2]}]}`) |
 | `GET` | `/machine/MeltingplotConfig/backups` | List backup commits |
 | `POST` | `/machine/MeltingplotConfig/manualBackup` | Create manual backup with optional message |
 | `GET` | `/machine/MeltingplotConfig/backup?hash=<hash>` | View backup file list and changed files |

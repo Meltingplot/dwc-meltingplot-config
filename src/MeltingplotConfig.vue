@@ -66,6 +66,7 @@
                 @apply-all="applyAll"
                 @apply-file="applyFile"
                 @apply-hunks="applyHunks"
+                @apply-selection="applySelection"
               />
             </v-tab-item>
 
@@ -390,6 +391,50 @@ export default {
           try {
             await this.apiPost('/apply')
             this.notify('All changes applied successfully', 'success')
+            await this.loadDiff()
+          } catch (err) {
+            this.notify('Apply failed: ' + err.message, 'error')
+          }
+        }
+      )
+    },
+    applySelection({ files, excludedFiles, partialFiles }) {
+      const count = files.length
+      const notes = []
+      if (excludedFiles > 0) {
+        notes.push(`${excludedFiles} file${excludedFiles !== 1 ? 's' : ''} stay${excludedFiles === 1 ? 's' : ''} untouched`)
+      }
+      if (partialFiles > 0) {
+        notes.push(`${partialFiles} file${partialFiles !== 1 ? 's' : ''} only get${partialFiles === 1 ? 's' : ''} the selected changes`)
+      }
+      this.confirm(
+        'Partially Apply Changes',
+        `Apply the current selection to ${count} file${count !== 1 ? 's' : ''}? ` +
+          (notes.length > 0 ? notes.join(', ') + '. ' : '') +
+          'A backup will be created first.',
+        async () => {
+          try {
+            const result = await this.apiPost('/applySelection', { files })
+            const applied = (result.applied || []).length
+            const skipped = (result.skipped || []).length
+            const failedHunks = Object.keys(result.partial || {}).reduce(
+              (sum, key) => sum + ((result.partial[key].failed || []).length), 0
+            )
+            if (skipped > 0 || failedHunks > 0) {
+              const problems = []
+              if (skipped > 0) {
+                problems.push(`${skipped} file${skipped !== 1 ? 's' : ''} skipped`)
+              }
+              if (failedHunks > 0) {
+                problems.push(`${failedHunks} change${failedHunks !== 1 ? 's' : ''} failed (conflict)`)
+              }
+              this.notify(
+                `Applied ${applied} file${applied !== 1 ? 's' : ''}, ${problems.join(', ')}`,
+                'warning'
+              )
+            } else {
+              this.notify(`Applied changes to ${applied} file${applied !== 1 ? 's' : ''}`, 'success')
+            }
             await this.loadDiff()
           } catch (err) {
             this.notify('Apply failed: ' + err.message, 'error')

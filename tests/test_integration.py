@@ -750,6 +750,23 @@ class TestProtectedFiles:
         result = env["manager"].apply_file("sys/config.g")
         assert "sys/config.g" in result["applied"]
 
+    def test_apply_selection_skips_protected_files(self, protected_env):
+        """A protected file in the selection is reported, never overwritten."""
+        env = protected_env
+        pfs = env["printer_fs"]
+        (pfs / "sys" / "config.g").write_text("G28\nM584 X0 Y1 OLD\n")
+        env["manager"].sync(env["repo_url"], "1.0")
+
+        result = env["manager"].apply_selection([
+            "sys/config.g",
+            "sys/meltingplot/dsf-config-override.g",
+        ])
+
+        assert result["applied"] == ["sys/config.g"]
+        assert result["skipped"] == ["sys/meltingplot/dsf-config-override.g"]
+        assert "Protected" in result["errors"]["sys/meltingplot/dsf-config-override.g"]
+        assert "ORIGINAL" in (pfs / "sys" / "meltingplot" / "dsf-config-override.g").read_text()
+
 
 @pytest.fixture
 def protected_missing_env(tmp_path, protected_file_repo):
@@ -885,3 +902,234 @@ class TestProtectedFilesMissingOnPrinter:
         assert "filaments/PLA/config-override.g" not in files
         assert "sys/config-override.g" not in files
         assert "sys/meltingplot/global-override.g" not in files
+
+
+# --- Partial apply (mixed file / hunk selection) ---
+
+
+@pytest.fixture
+def selection_repo(tmp_path):
+    """Reference repo with a multi-hunk config plus two single-hunk files."""
+    bare = tmp_path / "selection_bare.git"
+    bare.mkdir()
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+
+    clone_dir = tmp_path / "selection_setup"
+    subprocess.run(["git", "clone", str(bare), str(clone_dir)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    sys_dir = clone_dir / "sys"
+    sys_dir.mkdir()
+    (sys_dir / "config.g").write_text(REFERENCE_CONFIG_G)
+    (sys_dir / "homeall.g").write_text("G91\nG1 H1 Z5 F600\nG90\n")
+    (sys_dir / "onlyinref.g").write_text("; created by the reference\nM98\n")
+
+    macros_dir = clone_dir / "macros"
+    macros_dir.mkdir()
+    (macros_dir / "start.g").write_text("T0\nM116\nG29\n")
+
+    subprocess.run(["git", "add", "-A"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "reference config"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "branch", "-M", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=str(clone_dir), check=True, capture_output=True)
+
+    return str(bare)
+
+
+# A config long enough that two edits far apart produce two separate hunks
+# (difflib uses 3 lines of context).
+REFERENCE_CONFIG_G = """; Reference config
+M111 S0
+M550 P"printer"
+M552 S1
+G21
+G90
+M83
+M569 P0 S1
+M569 P1 S1
+M584 X0 Y1 Z2
+M350 X16 Y16 Z16 I1
+M92 X80 Y80 Z400
+M566 X900 Y900 Z12
+M203 X6000 Y6000 Z300
+M201 X500 Y500 Z20
+M906 X1000 Y1000 Z1000 I30
+M84 S30
+M140 H0
+M143 S280
+T0
+"""
+
+# Same file as on the printer: differs in line 2 (first hunk) and in the
+# M906 line (second hunk).
+PRINTER_CONFIG_G = (
+    REFERENCE_CONFIG_G
+    .replace("M111 S0", "M111 S1")
+    .replace("M906 X1000 Y1000 Z1000 I30", "M906 X800 Y800 Z800 I30")
+)
+
+
+@pytest.fixture
+def selection_env(tmp_path, selection_repo):
+    """Printer filesystem that differs from the reference in several files."""
+    printer_fs = tmp_path / "selection_sd"
+    (printer_fs / "sys").mkdir(parents=True)
+    (printer_fs / "macros").mkdir()
+    (printer_fs / "filaments").mkdir()
+
+    (printer_fs / "sys" / "config.g").write_text(PRINTER_CONFIG_G)
+    (printer_fs / "sys" / "homeall.g").write_text("G91\nG1 H1 Z10 F600\nG90\n")
+    (printer_fs / "macros" / "start.g").write_text("T0\nM116\n")
+    # sys/onlyinref.g deliberately absent -> status "missing"
+
+    ref_dir = str(tmp_path / "selection_reference")
+    backup_dir = str(tmp_path / "selection_backups")
+
+    resolved = {
+        "0:/sys/": str(printer_fs / "sys") + "/",
+        "0:/macros/": str(printer_fs / "macros") + "/",
+        "0:/filaments/": str(printer_fs / "filaments") + "/",
+    }
+
+    with (
+        patch("config_manager.REFERENCE_DIR", ref_dir),
+        patch("config_manager.BACKUP_DIR", backup_dir),
+    ):
+        manager = ConfigManager(
+            dsf_command_connection=MagicMock(),
+            resolved_dirs=resolved,
+        )
+        manager.sync(selection_repo, "1.0")
+        yield {
+            "manager": manager,
+            "repo_url": selection_repo,
+            "printer_fs": printer_fs,
+        }
+
+
+class TestApplySelection:
+    """Partial apply: keep some files/hunks, leave the rest untouched."""
+
+    def test_fixture_produces_two_hunks_for_config(self, selection_env):
+        """Sanity check: the config diff really has two separate hunks."""
+        detail = selection_env["manager"].diff_file("sys/config.g")
+        assert detail["status"] == "modified"
+        assert len(detail["hunks"]) == 2
+
+    def test_excluded_file_is_left_untouched(self, selection_env):
+        """A file absent from the selection keeps its printer content."""
+        env = selection_env
+        pfs = env["printer_fs"]
+        before = _read_printer(pfs, "macros/start.g")
+
+        result = env["manager"].apply_selection(["sys/config.g", "sys/homeall.g"])
+
+        assert "error" not in result
+        assert set(result["applied"]) == {"sys/config.g", "sys/homeall.g"}
+        assert _read_printer(pfs, "macros/start.g") == before
+        assert _read_printer(pfs, "sys/config.g") == REFERENCE_CONFIG_G
+
+    def test_excluded_hunk_is_left_untouched(self, selection_env):
+        """Only the selected hunk of a file is applied."""
+        env = selection_env
+        pfs = env["printer_fs"]
+
+        result = env["manager"].apply_selection([{"file": "sys/config.g", "hunks": [0]}])
+
+        assert result["applied"] == ["sys/config.g"]
+        assert result["partial"]["sys/config.g"] == {"applied": [0], "failed": []}
+
+        content = _read_printer(pfs, "sys/config.g")
+        assert "M111 S0" in content          # first hunk applied
+        assert "M906 X800 Y800 Z800" in content  # second hunk skipped
+
+    def test_mixed_whole_file_and_hunk_selection(self, selection_env):
+        """Whole files and per-hunk entries can be combined in one call."""
+        env = selection_env
+        pfs = env["printer_fs"]
+        start_before = _read_printer(pfs, "macros/start.g")
+
+        result = env["manager"].apply_selection([
+            {"file": "sys/config.g", "hunks": [1]},
+            {"file": "sys/homeall.g"},
+        ])
+
+        assert set(result["applied"]) == {"sys/config.g", "sys/homeall.g"}
+        config = _read_printer(pfs, "sys/config.g")
+        assert "M111 S1" in config                 # first hunk skipped
+        assert "M906 X1000 Y1000 Z1000" in config  # second hunk applied
+        assert _read_printer(pfs, "sys/homeall.g") == "G91\nG1 H1 Z5 F600\nG90\n"
+        assert _read_printer(pfs, "macros/start.g") == start_before
+
+    def test_missing_file_is_created_whole(self, selection_env):
+        """A file that only exists in the reference is written in full."""
+        env = selection_env
+        pfs = env["printer_fs"]
+
+        result = env["manager"].apply_selection([{"file": "sys/onlyinref.g", "hunks": [0]}])
+
+        assert result["applied"] == ["sys/onlyinref.g"]
+        assert _read_printer(pfs, "sys/onlyinref.g") == "; created by the reference\nM98\n"
+
+    def test_creates_single_backup_pair(self, selection_env):
+        """One partial apply yields one restore point, not one per file."""
+        env = selection_env
+        before = len(env["manager"].get_backups())
+
+        env["manager"].apply_selection([
+            {"file": "sys/config.g", "hunks": [0]},
+            {"file": "sys/homeall.g"},
+        ])
+
+        backups = env["manager"].get_backups()
+        assert len(backups) - before == 2
+        assert any("Partially applied reference" in b["message"] for b in backups)
+
+    def test_diff_after_partial_apply_still_shows_remaining_change(self, selection_env):
+        """The deselected hunk is still reported as an outstanding change."""
+        env = selection_env
+        env["manager"].apply_selection([{"file": "sys/config.g", "hunks": [0]}])
+
+        detail = env["manager"].diff_file("sys/config.g")
+        assert detail["status"] == "modified"
+        assert len(detail["hunks"]) == 1
+
+    def test_unknown_path_is_skipped_with_reason(self, selection_env):
+        env = selection_env
+        result = env["manager"].apply_selection(["nowhere/nope.g", "sys/homeall.g"])
+
+        assert result["applied"] == ["sys/homeall.g"]
+        assert result["skipped"] == ["nowhere/nope.g"]
+        assert "Unknown reference path" in result["errors"]["nowhere/nope.g"]
+
+    def test_missing_reference_file_is_skipped(self, selection_env):
+        env = selection_env
+        result = env["manager"].apply_selection(["sys/does-not-exist.g"])
+
+        assert result["applied"] == []
+        assert result["skipped"] == ["sys/does-not-exist.g"]
+        assert "Reference file not found" in result["errors"]["sys/does-not-exist.g"]
+
+    def test_invalid_hunk_index_is_skipped(self, selection_env):
+        env = selection_env
+        pfs = env["printer_fs"]
+        before = _read_printer(pfs, "sys/config.g")
+
+        result = env["manager"].apply_selection([{"file": "sys/config.g", "hunks": [99]}])
+
+        assert result["applied"] == []
+        assert result["skipped"] == ["sys/config.g"]
+        assert _read_printer(pfs, "sys/config.g") == before
+
+    def test_empty_selection_is_an_error(self, selection_env):
+        assert "error" in selection_env["manager"].apply_selection([])
+
+    def test_malformed_selection_is_an_error(self, selection_env):
+        manager = selection_env["manager"]
+        assert "error" in manager.apply_selection("sys/config.g")
+        assert "error" in manager.apply_selection([{"hunks": [0]}])
+        assert "error" in manager.apply_selection([{"file": "sys/config.g", "hunks": "0"}])
+        assert "error" in manager.apply_selection([{"file": "sys/config.g", "hunks": ["0"]}])
+        assert "error" in manager.apply_selection([42])

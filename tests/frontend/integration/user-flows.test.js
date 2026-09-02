@@ -474,3 +474,120 @@ describe('User flow: Tab navigation preserves state', () => {
     wrapper.destroy()
   })
 })
+
+describe('User flow: Partially apply after deselecting changes', () => {
+  let vuetify, backend
+
+  beforeEach(() => {
+    vuetify = new Vuetify()
+    backend = new MockBackend()
+  })
+
+  afterEach(() => {
+    delete global.fetch
+  })
+
+  async function mountWithDiff() {
+    backend
+      // '/applySelection' must be registered before '/apply' — MockBackend
+      // matches routes by substring in insertion order.
+      .on('/applySelection', { applied: ['sys/homex.g'] })
+      .on('/status', { branches: ['main'] })
+      .on('/diff', {
+        files: [
+          { file: 'sys/config.g', status: 'modified', hunks: [{ index: 0, header: '@@ -1,1 +1,1 @@' }] },
+          { file: 'sys/homex.g', status: 'modified', hunks: [{ index: 0, header: '@@ -1,1 +1,1 @@' }] }
+        ]
+      })
+
+    const wrapper = mount(MeltingplotConfig, {
+      localVue,
+      vuetify,
+      store: createStore({ referenceRepoUrl: 'https://example.com/repo.git' })
+    })
+    await flush()
+
+    await wrapper.vm.loadDiff()
+    const tabs = wrapper.findAll('.v-tab')
+    await tabs.at(1).trigger('click')
+    await flush()
+
+    return wrapper
+  }
+
+  function findButton(wrapper, label) {
+    return wrapper.findAll('.v-btn').wrappers.find(b => b.text().includes(label))
+  }
+
+  it('shows "Apply All" until something is deselected', async () => {
+    const wrapper = await mountWithDiff()
+
+    expect(findButton(wrapper, 'Apply All')).toBeTruthy()
+    expect(findButton(wrapper, 'Partially Apply')).toBeFalsy()
+
+    wrapper.destroy()
+  })
+
+  it('deselecting a file switches the button and skips that file', async () => {
+    const wrapper = await mountWithDiff()
+    const diff = wrapper.findComponent({ name: 'ConfigDiff' })
+
+    diff.vm.setFileSelected(wrapper.vm.diffFiles[0], false)
+    await flush()
+
+    expect(findButton(wrapper, 'Apply All')).toBeFalsy()
+    const partialBtn = findButton(wrapper, 'Partially Apply')
+    expect(partialBtn).toBeTruthy()
+    expect(wrapper.text()).toContain('1 excluded')
+
+    await partialBtn.trigger('click')
+    expect(wrapper.vm.confirmDialog.title).toBe('Partially Apply Changes')
+
+    await wrapper.vm.confirmDialog.action()
+    await flush()
+
+    const req = backend.lastRequestTo('/applySelection')
+    expect(req).toBeTruthy()
+    expect(req.opts.method).toBe('POST')
+    expect(JSON.parse(req.opts.body)).toEqual({ files: [{ file: 'sys/homex.g' }] })
+    // The plain apply-all endpoint must not have been used
+    expect(backend.requestsTo('/apply?')).toHaveLength(0)
+
+    wrapper.destroy()
+  })
+
+  it('deselecting a single hunk sends only the kept hunks for that file', async () => {
+    const wrapper = await mountWithDiff()
+    const diff = wrapper.findComponent({ name: 'ConfigDiff' })
+    const file = wrapper.vm.diffFiles[0]
+
+    // Simulate the detail fetch that happens when the panel is expanded
+    diff.vm.$set(file, 'hunks', [
+      { index: 0, header: '@@ -1,1 +1,1 @@', lines: ['-a', '+b'], selected: true },
+      { index: 1, header: '@@ -9,1 +9,1 @@', lines: ['-c', '+d'], selected: true }
+    ])
+    await flush()
+    expect(findButton(wrapper, 'Apply All')).toBeTruthy()
+
+    file.hunks[1].selected = false
+    await flush()
+
+    const partialBtn = findButton(wrapper, 'Partially Apply')
+    expect(partialBtn).toBeTruthy()
+    expect(wrapper.text()).toContain('1 partial')
+
+    await partialBtn.trigger('click')
+    await wrapper.vm.confirmDialog.action()
+    await flush()
+
+    const req = backend.lastRequestTo('/applySelection')
+    expect(JSON.parse(req.opts.body)).toEqual({
+      files: [
+        { file: 'sys/config.g', hunks: [0] },
+        { file: 'sys/homex.g' }
+      ]
+    })
+
+    wrapper.destroy()
+  })
+})

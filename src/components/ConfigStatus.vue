@@ -67,13 +67,8 @@
 <script>
 'use strict'
 
-const STATUS_MAP = {
-  not_configured: { color: 'grey', icon: 'mdi-help-circle', label: 'Not Configured' },
-  up_to_date: { color: 'success', icon: 'mdi-check-circle', label: 'Up to Date' },
-  updates_available: { color: 'warning', icon: 'mdi-alert-circle', label: 'Updates Available' },
-  sync_error: { color: 'error', icon: 'mdi-wifi-off', label: 'Sync Failed' },
-  error: { color: 'error', icon: 'mdi-alert', label: 'Error' }
-}
+import { computed } from 'vue'
+import { syncStatusInfo } from '../core/status'
 
 export default {
   name: 'ConfigStatus',
@@ -85,18 +80,13 @@ export default {
     lastSync: { type: String, default: '' },
     syncing: { type: Boolean, default: false }
   },
-  computed: {
-    statusInfo() {
-      return STATUS_MAP[this.status] || STATUS_MAP.not_configured
-    },
-    statusColor() {
-      return this.statusInfo.color
-    },
-    statusIcon() {
-      return this.statusInfo.icon
-    },
-    statusLabel() {
-      return this.statusInfo.label
+  setup(props) {
+    const statusInfo = computed(() => syncStatusInfo(props.status))
+    return {
+      statusInfo,
+      statusColor: computed(() => statusInfo.value.color),
+      statusIcon: computed(() => statusInfo.value.icon),
+      statusLabel: computed(() => statusInfo.value.label)
     }
   }
 }

@@ -1,6 +1,8 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils';
 import Vuex from 'vuex';
 import MeltingplotConfig from '../../src/MeltingplotConfig.vue';
+import { normalizeFile } from '../../src/core/diff';
+import { normalizeBackup } from '../../src/core/useConfigPage';
 
 const localVue = createLocalVue();
 localVue.use(Vuex);
@@ -10,20 +12,24 @@ function createStore(pluginData = {}, options = {}) {
     if (options.pid !== undefined) {
         plugin.pid = options.pid;
     }
+    // Mirrors DWC's store: a namespaced `machine` module with a `model` child,
+    // so `store.state.machine.model` resolves exactly as it does in DWC.
     return new Vuex.Store({
         modules: {
-            'machine/model': {
-                namespaced: true,
-                state: {
-                    plugins: {
-                        MeltingplotConfig: plugin
-                    }
-                }
-            },
             machine: {
                 namespaced: true,
                 actions: {
                     startSbcPlugin: options.startSbcPlugin || jest.fn()
+                },
+                modules: {
+                    model: {
+                        namespaced: true,
+                        state: {
+                            plugins: {
+                                MeltingplotConfig: plugin
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -201,8 +207,9 @@ describe('MeltingplotConfig', () => {
             mockFetchSuccess({ branches: [] });
             const wrapper = mountComponent({ pid: -1 });
 
-            jest.spyOn(wrapper.vm, 'waitForBackend').mockResolvedValue(false);
-            await wrapper.vm.startBackend();
+            // /status keeps failing, so the poll budget runs out
+            mockFetchError(404, 'Not Found');
+            await wrapper.vm.startBackend({ attempts: 2, delay: 1 });
 
             expect(wrapper.vm.snackbar.color).toBe('error');
             expect(wrapper.vm.snackbar.text).toContain('did not come up');
@@ -365,7 +372,7 @@ describe('MeltingplotConfig', () => {
             const wrapper = mountComponent();
             await wrapper.vm.$nextTick();
             await new Promise(r => setTimeout(r, 10));
-            expect(wrapper.vm.diffFiles).toEqual(files);
+            expect(wrapper.vm.diffFiles).toEqual(files.map(normalizeFile));
         });
     });
 
@@ -413,7 +420,7 @@ describe('MeltingplotConfig', () => {
             ];
             mockFetchSuccess({ files });
             await wrapper.vm.loadDiff();
-            expect(wrapper.vm.diffFiles).toEqual(files);
+            expect(wrapper.vm.diffFiles).toEqual(files.map(normalizeFile));
             expect(wrapper.vm.loadingDiff).toBe(false);
         });
 
@@ -470,7 +477,7 @@ describe('MeltingplotConfig', () => {
             const backups = [{ hash: 'abc', message: 'backup' }];
             mockFetchSuccess({ backups });
             await wrapper.vm.loadBackups();
-            expect(wrapper.vm.backups).toEqual(backups);
+            expect(wrapper.vm.backups).toEqual(backups.map(normalizeBackup));
         });
 
         it('sets loadingBackups during operation', async () => {
@@ -505,7 +512,7 @@ describe('MeltingplotConfig', () => {
             await wrapper.vm.$nextTick();
             await new Promise(r => setTimeout(r, 10));
 
-            expect(wrapper.vm.backups).toEqual(backups);
+            expect(wrapper.vm.backups).toEqual(backups.map(normalizeBackup));
             expect(wrapper.vm.backupsLoaded).toBe(true);
         });
 

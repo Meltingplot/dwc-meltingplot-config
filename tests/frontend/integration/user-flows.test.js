@@ -8,13 +8,20 @@ const localVue = createLocalVue()
 localVue.use(Vuex)
 
 function createStore(pluginData = {}) {
+  // Mirrors DWC's store: a namespaced `machine` module with a `model` child,
+  // so `store.state.machine.model` resolves exactly as it does in DWC.
   return new Vuex.Store({
     modules: {
-      'machine/model': {
+      machine: {
         namespaced: true,
-        state: {
-          plugins: {
-            MeltingplotConfig: { data: pluginData }
+        modules: {
+          model: {
+            namespaced: true,
+            state: {
+              plugins: {
+                MeltingplotConfig: { data: pluginData }
+              }
+            }
           }
         }
       }

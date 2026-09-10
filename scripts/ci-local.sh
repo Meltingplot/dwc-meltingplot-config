@@ -14,7 +14,7 @@
 #
 # Stages:
 #   python      pytest (venv, host Python)
-#   matrix      pytest on Python 3.9/3.10/3.11/3.12 via Docker (full CI matrix)
+#   matrix      pytest on Python 3.10/3.11/3.12 via Docker (full CI matrix)
 #   frontend    npm ci + lint + jest unit + jest integration
 #   build       DuetWebControl checkout + build-plugin -> plugin ZIP
 #   all         python + frontend + build  (default)
@@ -31,7 +31,7 @@ VENV="$WORK/venv"
 DWC_DIR="$WORK/DuetWebControl"
 DWC_REF="${DWC_REF:-v3.6-dev}"
 PYTHON="${PYTHON:-python3}"
-PY_MATRIX=(3.9 3.10 3.11 3.12)
+PY_MATRIX=(3.10 3.11 3.12)
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }

@@ -16,7 +16,7 @@ A DWC + DSF plugin that keeps Meltingplot 3D printer configurations up to date.
 - Duet SBC (Raspberry Pi) running **DSF 3.6+**
 - Duet Web Control (DWC) **3.6+**
 - Git installed on the SBC
-- Python **3.9+** (on the SBC)
+- Python **3.10+** (on the SBC)
 
 ## Building
 
@@ -224,7 +224,7 @@ ESLint 8 with `eslint-plugin-vue` (Vue 2 recommended rules).
 
 GitHub Actions workflow at `.github/workflows/ci.yml` runs three stages:
 
-1. **Python Tests** — `pytest` with coverage on Python 3.9, 3.10, 3.11, 3.12
+1. **Python Tests** — `pytest` with coverage on Python 3.10, 3.11, 3.12
 2. **Frontend Lint & Tests** — `npm run lint` + unit and integration tests with Node.js 18
 3. **Build** — checks out DuetWebControl `v3.6-dev`, runs `build-plugin`, uploads artifact (30-day retention)
 
@@ -241,7 +241,7 @@ scripts/ci-local.sh            # all three stages (python, frontend, build)
 scripts/ci-local.sh python     # pytest in .ci-local/venv
 scripts/ci-local.sh frontend   # npm ci + lint + jest unit/integration
 scripts/ci-local.sh build      # DuetWebControl checkout + build-plugin
-scripts/ci-local.sh matrix     # pytest on Python 3.9-3.12 via Docker
+scripts/ci-local.sh matrix     # pytest on Python 3.10-3.12 via Docker
 ```
 
 The `matrix` stage is the only one that needs Docker; it mirrors the CI's

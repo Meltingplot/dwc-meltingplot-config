@@ -180,7 +180,7 @@ For local development, a standalone `scripts/build-zip.js` packages source files
 
 GitHub Actions workflow at `.github/workflows/ci.yml` (3 stages):
 
-1. **Python Tests** — runs `pytest` on Python 3.9, 3.10, 3.11, 3.12
+1. **Python Tests** — runs `pytest` on Python 3.10, 3.11, 3.12
 2. **Frontend Lint & Tests** — runs `npm run lint` + `npm test` with Node.js 18
 3. **Build** — checks out DuetWebControl `v3.6-dev`, runs `build-plugin`, uploads artifact (30-day retention)
 

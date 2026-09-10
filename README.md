@@ -340,6 +340,12 @@ GitHub Actions workflow at `.github/workflows/ci.yml`:
    3.7 leg also runs `vue-tsc` against the templates — that type check is what catches a
    Vuetify 4 prop that silently changed meaning.
 
+   Each leg uploads the package's **contents**, not the package file. GitHub wraps an
+   artifact in an archive of its own, so the file you download from the Actions page —
+   `MeltingplotConfig-plugin-dwc36.zip` — *is* the installable plugin package, with
+   `plugin.json` at its root. Uploading the ZIP itself would hand you a ZIP inside a ZIP,
+   which DWC rejects.
+
 Triggers: push to `main`/`master`, pull requests to `main`/`master`, manual dispatch with
 per-generation DWC ref overrides.
 

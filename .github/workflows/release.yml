@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the plugin against the latest stable DuetWebControl release and
+# Builds the plugin against the latest stable DuetWebControl 3.6 release and
 # publishes a GitHub Release.
 #
 # Trigger: push to the `release` branch (or run manually via workflow_dispatch).
@@ -64,19 +64,23 @@ jobs:
           path: plugin
           fetch-depth: 0
 
-      - name: Resolve latest stable DuetWebControl tag
+      - name: Resolve latest stable DuetWebControl 3.6 tag
         id: dwc
+        # Pinned to the 3.6 series on purpose: this plugin's frontend is Vue 2.7 /
+        # Vuetify 2.7 and only builds with DWC 3.6's webpack toolchain. Resolving
+        # the highest tag overall would silently switch to 3.7 (Vue 3 / Vite) the
+        # day Duet3D tags it, and every release build would fail.
         run: |
           ref=$(git ls-remote --tags --refs https://github.com/Duet3D/DuetWebControl.git \
             | awk -F/ '{print $NF}' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -E '^v3\.6\.[0-9]+$' \
             | sort -V \
             | tail -n1)
           if [ -z "$ref" ]; then
-            echo "::error::Could not resolve a stable DuetWebControl tag"
+            echo "::error::Could not resolve a stable DuetWebControl 3.6 tag"
             exit 1
           fi
-          echo "Latest stable DuetWebControl tag: $ref"
+          echo "Latest stable DuetWebControl 3.6 tag: $ref"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
       - name: Determine plugin version

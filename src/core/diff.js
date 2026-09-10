@@ -12,6 +12,43 @@
  * to reactive state, and nothing may add a field to them afterwards.
  */
 
+/**
+ * One hunk of a file diff.
+ *
+ * `GET /diff` returns summary hunks (`index` + `header` only); the per-file
+ * detail response adds `lines` and `summary`.
+ *
+ * @typedef {object} DiffHunk
+ * @property {number} index Position of the hunk in the file's hunk list
+ * @property {string} header Unified-diff header, e.g. `@@ -12,4 +12,6 @@`
+ * @property {Array<string>} [lines] Unified-diff lines, detail responses only
+ * @property {string} [summary] Human-readable summary of the change
+ * @property {boolean} [selected] Whether the hunk is included in an apply
+ */
+
+/**
+ * One file of the reference-vs-printer diff.
+ *
+ * @typedef {object} DiffFile
+ * @property {string} file Reference-repo relative path
+ * @property {string} status `modified`, `missing`, `extra` or `unchanged`
+ * @property {boolean} [selected] Whether the file is included in an apply
+ * @property {boolean} [loadingDetail] Whether its detail fetch is in flight
+ * @property {Array<DiffHunk>|null} [hunks] Summary or detail hunks
+ */
+
+/**
+ * One rendered row of the side-by-side diff table.
+ *
+ * @typedef {object} DiffRow
+ * @property {number|null} leftLine Line number on the printer side
+ * @property {string|null} left Text on the printer side
+ * @property {string} leftClass CSS class for the printer side
+ * @property {number|null} rightLine Line number on the reference side
+ * @property {string|null} right Text on the reference side
+ * @property {string} rightClass CSS class for the reference side
+ */
+
 /** Colour and icon per file status reported by `GET /diff`. */
 export const FILE_STATUS = {
   modified: { color: 'warning', icon: 'mdi-file-document-edit' },
@@ -73,7 +110,7 @@ export function parseHunkHeader(header) {
 /**
  * How many unchanged lines the diff skipped before a hunk.
  *
- * @param {object} file File entry with a `hunks` array
+ * @param {DiffFile} file File entry with a `hunks` array
  * @param {number} hunkIdx Index into `file.hunks`
  * @returns {number} Number of hidden lines (0 when unknown)
  */
@@ -95,8 +132,8 @@ export function skippedLinesBetween(file, hunkIdx) {
  * appear on both sides. An unbalanced run leaves empty cells (`null` value,
  * `diff-empty` class).
  *
- * @param {object} hunk Detail hunk with a `lines` array
- * @returns {Array<object>} Rows with left/right text, line numbers and classes
+ * @param {DiffHunk} hunk Detail hunk with a `lines` array
+ * @returns {Array<DiffRow>} Rows with left/right text, line numbers and classes
  */
 export function sideBySideLines(hunk) {
   if (!hunk.lines) return []
@@ -153,9 +190,9 @@ export function sideBySideLines(hunk) {
 /**
  * Give a hunk its `selected` flag up front.
  *
- * @param {object} hunk Summary or detail hunk from the daemon
+ * @param {DiffHunk} hunk Summary or detail hunk from the daemon
  * @param {boolean} [selected] Initial selection state
- * @returns {object} A copy carrying `selected`
+ * @returns {DiffHunk} A copy carrying `selected`
  */
 export function normalizeHunk(hunk, selected = true) {
   return { ...hunk, selected: hunk.selected === undefined ? selected : hunk.selected }
@@ -167,8 +204,8 @@ export function normalizeHunk(hunk, selected = true) {
  * Call this on the entries coming out of `GET /diff` **before** they reach
  * reactive state. Existing fields are kept, so calling it twice is harmless.
  *
- * @param {object} file File entry from the daemon
- * @returns {object} Normalised copy
+ * @param {DiffFile} file File entry from the daemon
+ * @returns {DiffFile} Normalised copy
  */
 export function normalizeFile(file) {
   const selected = file.selected === undefined ? true : file.selected
@@ -187,7 +224,7 @@ export function normalizeFile(file) {
  * per-file detail response carries `lines` and therefore usable per-hunk
  * checkboxes. A file whose panel was never expanded always applies as a whole.
  *
- * @param {object} file File entry
+ * @param {DiffFile} file File entry
  * @returns {boolean} true when per-hunk selection is possible
  */
 export function hasHunkDetail(file) {
@@ -195,7 +232,7 @@ export function hasHunkDetail(file) {
 }
 
 /**
- * @param {object} file File entry
+ * @param {DiffFile} file File entry
  * @returns {number} Number of selected hunks
  */
 export function selectedHunkCount(file) {
@@ -208,7 +245,7 @@ export function selectedHunkCount(file) {
  *
  * Deselecting every hunk drops the file just like unchecking it.
  *
- * @param {object} file File entry
+ * @param {DiffFile} file File entry
  * @returns {boolean} Checkbox state
  */
 export function fileChecked(file) {
@@ -222,7 +259,7 @@ export function fileChecked(file) {
 /**
  * Whether the file's checkbox reads as indeterminate.
  *
- * @param {object} file File entry
+ * @param {DiffFile} file File entry
  * @returns {boolean} true when only some hunks are selected
  */
 export function fileIsPartial(file) {
@@ -240,8 +277,8 @@ export function fileIsPartial(file) {
  * - `excludedFiles`: files the user dropped completely
  * - `partialFiles`: files where only some hunks are selected
  *
- * @param {Array<object>} changedFiles Files with a status other than `unchanged`
- * @returns {{files: Array<object>, excludedFiles: number, partialFiles: number}}
+ * @param {Array<DiffFile>} changedFiles Files with a status other than `unchanged`
+ * @returns {{files: Array<{file: string, hunks?: Array<number>}>, excludedFiles: number, partialFiles: number}}
  */
 export function computeSelection(changedFiles) {
   const files = []

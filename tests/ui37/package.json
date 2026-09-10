@@ -1,0 +1,18 @@
+{
+  "name": "dwc-meltingplot-config-ui37-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vue 3 test project for the DWC 3.7 UI. Separate from the root package because two Vue majors cannot share one node_modules.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^15.11.7",
+    "vitest": "^2.1.9",
+    "vue": "^3.5.13",
+    "vuetify": "^4.1.5"
+  }
+}

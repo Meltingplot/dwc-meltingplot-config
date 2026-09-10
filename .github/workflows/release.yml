@@ -55,11 +55,24 @@ jobs:
       - run: npx jest tests/frontend/*.test.js tests/frontend/core/ --verbose
       - run: npx jest tests/frontend/integration/ --verbose
 
+  ui37-tests:
+    name: DWC 3.7 UI Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: tests/ui37/package-lock.json
+      - run: npm ci --prefix tests/ui37
+      - run: npm --prefix tests/ui37 test
+
   # Resolve the version once so both build legs and the publish step agree.
   version:
     name: Resolve version
     runs-on: ubuntu-latest
-    needs: [python-tests, frontend-tests]
+    needs: [python-tests, frontend-tests, ui37-tests]
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}

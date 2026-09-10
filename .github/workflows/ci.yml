@@ -65,10 +65,33 @@ jobs:
       - name: Integration tests
         run: npx jest tests/frontend/integration/ --verbose
 
+  # A separate job because two Vue majors cannot share one node_modules: the
+  # DWC 3.7 components mount under Vue 3 / Vuetify 4 here, and the shared core
+  # runs a second time on Vue 3's reactivity.
+  ui37-tests:
+    name: DWC 3.7 UI Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: tests/ui37/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix tests/ui37
+
+      - name: Vue 3 tests
+        run: npm --prefix tests/ui37 test
+
   build:
     name: Build DWC ${{ matrix.dwc_major }} package
     runs-on: ubuntu-latest
-    needs: [python-tests, frontend-tests]
+    needs: [python-tests, frontend-tests, ui37-tests]
     strategy:
       fail-fast: false
       matrix:

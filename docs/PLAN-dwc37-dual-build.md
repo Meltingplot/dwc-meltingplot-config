@@ -1,6 +1,6 @@
 # Plan: one repo, two plugin packages — DWC 3.6 and DWC 3.7
 
-**Status:** phases 1-3 implemented; phase 4 (the DWC 3.7 UI) and phase 5 (release) open.
+**Status:** phases 1-5 implemented except the live hardware checks and the release itself.
 Deviations from the plan as written are noted inline under **Implementation notes**.
 **Reference implementation:** [jaysuk/ClosedLoopTuningPlugin](https://github.com/jaysuk/ClosedLoopTuningPlugin)
 (commits `4a55622` → `62efa70` → `39cbf7a` → `bfa001d` → `33e2791` on 2026‑08‑20 are the whole
@@ -401,7 +401,7 @@ only phase that can regress the working 3.6 plugin, 3 proves the pipeline before
   started by `ensureBackendRunning` through the Pinia adapter, `/machine/MeltingplotConfig/status`
   answers. And the `-dwc36.zip` still installs on 3.6. And each is rejected by the other.
 
-### Phase 4 — the DWC 3.7 UI — **open**
+### Phase 4 — the DWC 3.7 UI — **done, except the live check**
 - Port the four SFCs to Vuetify 4 as template-only `<script setup lang="ts">` components over the
   shared composables (translation table §6). Suggested order: `ConfigStatus` (props only) →
   `MeltingplotConfig` shell with tabs → `ConfigDiff` → `BackupHistory` (treeview last). Build after
@@ -409,7 +409,7 @@ only phase that can regress the working 3.6 plugin, 3 proves the pipeline before
 - `tests/ui37/` Vitest project; run `core/*` tests there too; ESLint overrides.
 - Live check on DWC 3.7 for every flow in the Phase 2 smoke list.
 
-### Phase 5 — docs and release — **docs done, release open**
+### Phase 5 — docs and release — **docs done; version bump and release open**
 - README: two ZIPs, which one to install, local build instructions (`DWC36_DIR`, `DWC37_DIR`).
 - CLAUDE.md: layout, "never index `plugin.data` directly", the two test runners, the Vue 2.7
   reactivity rule for `core/`, the stage-script rule ("the raw repo is never handed to a DWC builder").
@@ -448,7 +448,7 @@ similar near-1:1 ratio here.
 
 ---
 
-## 10. Implementation notes (phases 1-3)
+## 10. Implementation notes
 
 What the implementation does differently from the plan above, and what it confirmed.
 
@@ -511,3 +511,29 @@ What the implementation does differently from the plan above, and what it confir
   generation.
 - Section 7 (the Python backend against DSF 3.7 / dsf-python 3.7) is untouched and remains
   a release gate for the 3.7 package.
+
+
+### Phase 4 notes
+
+- **The 3.7 UI is a 1:1 port**, as expected: the same four components over the same
+  composables, with the Vuetify 2 -> 4 translation table applied. No logic moved into a
+  template.
+- **vue-tsc earned its keep before a single line of markup was reviewed.** It rejected two
+  JSDoc annotations that had quietly erased type information (see the deviations above),
+  a locally re-declared `Host` interface that had already drifted, and a `file.hunks.length`
+  the compiler could not prove non-null.
+- **`tests/ui37/` runs 123 tests**: 34 for the four components and the entry point, and the
+  89 shared-core tests a second time under Vue 3. Three settings in `vitest.config.mjs`
+  turned out to be load-bearing, and none of them fails with a message that points at the
+  cause:
+  - `resolve.alias` for `vue` / `vuetify` — without it they resolve from the project root
+    to Vue 2 / Vuetify 2 and components render nothing.
+  - Those aliases must be **anchored regexes**. As plain strings they also rewrite
+    subpaths, and `vuetify/components` becomes a directory path that no longer resolves
+    through the exports map.
+  - `server.fs.allow` must name the repository root, or every import from `src/` and
+    `tests/frontend/` fails with "Does the file exist?" for a file that plainly does.
+- **Props are not deep-reactive under Vue 3 either**, so a spec that mutates an entry after
+  mounting holds the list in `reactive()` — mirroring the parent's ref.
+- The plan's optional `scripts/check-sfc.js` was skipped: the real builds and the Vitest
+  project cover it.

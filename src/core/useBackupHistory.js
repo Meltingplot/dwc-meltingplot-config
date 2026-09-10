@@ -10,7 +10,84 @@
 import { computed, ref, watch } from 'vue'
 import { apiGet, apiPost, query } from './api'
 import { diffStatusColor, parseHunkHeader, sideBySideLines } from './diff'
-import { normalizeBackup } from './useConfigPage'
+
+/**
+ * A backup commit, as the history list works with it.
+ *
+ * Everything below `isFullBackup` is UI bookkeeping that `normalizeBackup`
+ * initialises up front — Vue 2.7 cannot observe a property added later.
+ *
+ * @typedef {object} Backup
+ * @property {string} hash Backup commit hash
+ * @property {string} [message] Commit message
+ * @property {string} [timestamp] When the backup was taken
+ * @property {number} [filesChanged] Number of files the commit touched
+ * @property {boolean} [isFullBackup] Whether it snapshots every tracked file
+ * @property {boolean} expanded Whether the row's detail panel is open
+ * @property {boolean} loadingFiles Whether the file list fetch is in flight
+ * @property {boolean} loadingDiff Whether a file's diff or content is loading
+ * @property {boolean} loadingContent Reserved for a separate content spinner
+ * @property {Array<string>|null} changedFiles Files the commit touched
+ * @property {Array<string>|null} files Every file in the commit
+ * @property {Array<string>} activeNodes Selected tree node ids
+ * @property {string|null} selectedFile Path shown in the viewer
+ * @property {BackupFileDiff|null} fileDiff Diff of the selected file
+ * @property {BackupFileContent|null} fileContent Content of the selected file
+ * @property {string} viewMode `content` or `diff`
+ */
+
+/**
+ * The diff a backup commit introduced for one file.
+ *
+ * @typedef {object} BackupFileDiff
+ * @property {string} file Path within the backup
+ * @property {string} status `modified`, `added`, `deleted`, `unchanged` or `error`
+ * @property {Array<import('./diff').DiffHunk>} hunks Detail hunks
+ */
+
+/**
+ * A file's content as of a backup commit.
+ *
+ * @typedef {object} BackupFileContent
+ * @property {string} file Path within the backup
+ * @property {string} [status] `not_found` when the file is absent
+ * @property {string|null} content File content, or null when absent
+ */
+
+/**
+ * One node of the backup file tree.
+ *
+ * @typedef {object} TreeItem
+ * @property {string} id Full path — what the viewer looks the file up by
+ * @property {string} name Path segment shown in the tree
+ * @property {Array<TreeItem>} [children] Present on folders only
+ */
+
+/**
+ * Give a backup entry every field the history UI will ever set on it.
+ *
+ * Same reactivity rule as `normalizeFile` — Vue 2.7 cannot observe properties
+ * added after the object became reactive.
+ *
+ * @param {object} backup Backup entry from `GET /backups`
+ * @returns {Backup} Normalised copy
+ */
+export function normalizeBackup(backup) {
+  return {
+    expanded: false,
+    loadingFiles: false,
+    loadingDiff: false,
+    loadingContent: false,
+    changedFiles: null,
+    files: null,
+    activeNodes: [],
+    selectedFile: null,
+    fileDiff: null,
+    fileContent: null,
+    viewMode: 'diff',
+    ...backup
+  }
+}
 
 /**
  * Turn a flat list of file paths into a nested tree for `v-treeview`.
@@ -19,7 +96,7 @@ import { normalizeBackup } from './useConfigPage'
  * which is what the viewer looks the selected file up by.
  *
  * @param {Array<string>} files Slash-separated paths
- * @returns {Array<object>} Tree items with `id`, `name` and optional `children`
+ * @returns {Array<TreeItem>} Tree items with `id`, `name` and optional `children`
  */
 export function buildFileTree(files) {
   if (!files || files.length === 0) return []
@@ -67,7 +144,7 @@ export function buildFileTree(files) {
  * Which file list a backup row shows: everything for a full backup, only the
  * touched files for an incremental one.
  *
- * @param {object} backup Backup entry
+ * @param {Backup} backup Backup entry
  * @returns {Array<string>} File paths
  */
 export function displayFiles(backup) {
@@ -80,11 +157,11 @@ export function displayFiles(backup) {
 /**
  * Build the backup history's state and actions.
  *
- * @param {import('vue').Ref<Array<object>>|Function} backupsRef Reactive source
- *   of the backup list (a ref, or a getter returning it)
+ * @param {import('vue').Ref<Array<Backup>>|(() => Array<Backup>)} backupsRef Reactive
+ *   source of the backup list (a ref, or a getter returning it)
  * The return type is left to inference — see the note in `useConfigPage.js`.
  *
- * @param {(event: string, payload?: *) => void} emit Component emit function
+ * @param {(event: any, payload?: any) => void} emit Component emit function
  */
 export function useBackupHistory(backupsRef, emit) {
   const creatingBackup = ref(false)
@@ -110,7 +187,7 @@ export function useBackupHistory(backupsRef, emit) {
   /**
    * Expand or collapse a backup row, fetching its file list on first expand.
    *
-   * @param {object} backup Backup entry
+   * @param {Backup} backup Backup entry
    */
   async function toggleExpand(backup) {
     if (backup.expanded) {

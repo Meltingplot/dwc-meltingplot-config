@@ -221,5 +221,8 @@ dist/
 # Staged plugin trees written by scripts/stage.js
 .build/
 
+# The Vue 3 test project keeps its own lockfile, but not its modules
+tests/ui37/node_modules/
+
 # Local CI runner workspace
 .ci-local/

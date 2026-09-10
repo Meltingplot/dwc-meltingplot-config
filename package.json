@@ -9,7 +9,8 @@
     "test:integration": "jest tests/frontend/integration/ --verbose",
     "build": "node scripts/build-zip.js",
     "stage": "node scripts/stage.js",
-    "build:plugin": "node scripts/build.js"
+    "build:plugin": "node scripts/build.js",
+    "test:ui37": "npm --prefix tests/ui37 test"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

@@ -17,10 +17,11 @@
 #   python      pytest (venv, host Python)
 #   matrix      pytest on Python 3.10/3.11/3.12 via Docker (full CI matrix)
 #   frontend    npm ci + lint + jest unit + jest integration
+#   ui37        Vitest: DWC 3.7 components + the shared core under Vue 3
 #   build36     DWC 3.6 checkout + build.js 36 -> ...-dwc36.zip
 #   build37     DWC 3.7 checkout + build.js 37 -> ...-dwc37.zip (needs Node 22+)
 #   build       build36 + build37
-#   all         python + frontend + build  (default)
+#   all         python + frontend + ui37 + build  (default)
 #
 # The 3.7 toolchain (Vite 8 / TypeScript 6) needs Node 22+. When the host Node
 # is older, build37 runs inside a node:22 Docker container instead.
@@ -94,6 +95,30 @@ stage_frontend() {
     npx jest tests/frontend/*.test.js tests/frontend/core/ --verbose
     npx jest tests/frontend/integration/ --verbose
     ok "Frontend lint & tests passed"
+}
+
+stage_ui37() {
+    step "DWC 3.7 UI tests (Vue 3 + Vuetify 4)"
+    local node_major
+    node_major="$(node -p 'process.versions.node.split(".")[0]')"
+
+    if [ "$node_major" -ge "$NODE37_MIN" ]; then
+        (cd "$ROOT/tests/ui37" && npm ci && npm test)
+    else
+        command -v docker >/dev/null \
+            || die "node $node_major is too old for Vitest here (need $NODE37_MIN+) and docker is not available"
+        step "Host node is $node_major — running in a node:$NODE37_MIN container"
+        docker run --rm \
+            -v "$ROOT:/work" \
+            -w /work/tests/ui37 \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e CI=1 \
+            "node:$NODE37_MIN" \
+            bash -c 'npm ci && npm test' \
+            || die "DWC 3.7 UI tests failed"
+    fi
+    ok "DWC 3.7 UI tests passed"
 }
 
 # Fetch (or update) a DuetWebControl checkout at a given ref.
@@ -224,14 +249,15 @@ stages=("$@")
 [ ${#stages[@]} -eq 0 ] && stages=(all)
 for s in "${stages[@]}"; do
     case "$s" in
-        all)      stage_python; stage_frontend; stage_build ;;
+        all)      stage_python; stage_frontend; stage_ui37; stage_build ;;
         python)   stage_python ;;
         matrix)   stage_matrix ;;
         frontend) stage_frontend ;;
+        ui37)     stage_ui37 ;;
         build)    stage_build ;;
         build36)  stage_build36 ;;
         build37)  stage_build37 ;;
-        *)        die "unknown stage: $s (python|matrix|frontend|build|build36|build37|all)" ;;
+        *)        die "unknown stage: $s (python|matrix|frontend|ui37|build|build36|build37|all)" ;;
     esac
 done
 

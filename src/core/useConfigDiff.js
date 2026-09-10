@@ -28,11 +28,11 @@ import {
 /**
  * Build the diff viewer's state and actions.
  *
- * @param {import('vue').Ref<Array<object>>|Function} filesRef Reactive source
- *   of the file list (a ref, or a getter returning it)
+ * @param {import('vue').Ref<Array<import('./diff').DiffFile>>|(() => Array<import('./diff').DiffFile>)} filesRef
+ *   Reactive source of the file list (a ref, or a getter returning it)
  * The return type is left to inference — see the note in `useConfigPage.js`.
  *
- * @param {(event: string, payload?: *) => void} emit Component emit function
+ * @param {(event: any, payload?: any) => void} emit Component emit function
  */
 export function useConfigDiff(filesRef, emit) {
   const expandedPanels = ref([])

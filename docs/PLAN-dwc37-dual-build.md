@@ -537,3 +537,37 @@ What the implementation does differently from the plan above, and what it confir
   mounting holds the list in `reactive()` — mirroring the parent's ref.
 - The plan's optional `scripts/check-sfc.js` was skipped: the real builds and the Vitest
   project cover it.
+
+
+### Section 7 — the Python backend on DSF 3.7 (audited at source level)
+
+Checked `dsf-python` `v3.6-dev` against `v3.7-dev` (3.7.0-beta.1). Every module path the
+daemon patches still exists in 3.7, `PluginManifest.__init__` keeps its signature, and
+`Board.state` / `NetworkInterface.type` are still real property objects, so `.setter()`
+still works. All three patches apply.
+
+What 3.7 changed, and what it means per patch:
+
+- **The property system was rewritten.** Hand-written `@property` setters became
+  `model_prop(...)` descriptors built at class-definition time, which capture their enum
+  then and there. Replacing a module-level enum afterwards therefore no longer reaches the
+  setter on 3.7 — but replacing the setter does. Each of the two enum patches already does
+  both, so both generations stay covered; which half is load-bearing just swaps over.
+- **`PluginManifest._data` is fixed upstream** (`model_prop('data', ModelDictionary, ...)`).
+  Our patch assigns the same thing the descriptor's default would, so it is redundant but
+  harmless.
+- **`BoardState.timedOut` is still missing.** Load-bearing on both.
+- **`NetworkInterfaceType` gained `ethernet` — and lost `lan`.** The same class of crash
+  moved to the other value; our replacement enum carries both.
+- **`resolve_path`, `add_http_endpoint`, `set_plugin_data` keep their signatures.**
+  `resolve_path` still returns the raw `Response`, so that unwrap is still needed.
+  `set_plugin_data`'s `value` widened from `str` to `object`.
+
+Changes made off the back of this: the three patches are now named functions applied
+through `_apply_dsf_workaround()`, which reports a patch that no longer fits on stderr
+instead of raising — a library that has moved on must not take the daemon down at import
+time. `tests/test_daemon_workarounds.py` covers each patch against fakes shaped like
+dsf-python's own classes (24 tests).
+
+This is a source-level audit. `get_object_model()` on a real DSF 3.7 SBC is still the test,
+and remains the release gate for the 3.7 package.

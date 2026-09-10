@@ -91,15 +91,36 @@ other.
 
 ## Known dsf-python Bugs & Runtime Workarounds
 
-These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at startup. **Do not remove these workarounds** — they are required for correct operation on real hardware.
+These bugs exist in dsf-python and are worked around in our daemon at startup. **Do not
+remove these workarounds** — they are required for correct operation on real hardware.
+
+All of them were re-checked against **dsf-python v3.7-dev (3.7.0-beta.1)**: every module
+path, the `PluginManifest` constructor and the `Board` / `NetworkInterface` property
+objects still exist there, so each patch still applies. What changed is how much of each
+one is still doing work — noted per bug below.
+
+Each patch is applied through `_apply_dsf_workaround(name, patch)`, which swallows
+`ImportError` (the library is absent in tests) and reports anything else on stderr instead
+of raising. A workaround that no longer fits a future library must degrade, not take the
+daemon down at import time.
+
+**3.7 changed how the ObjectModel declares properties**: hand-written `@property` setters
+became `model_prop(...)` descriptors built at class-definition time. That matters for two
+of the patches — a descriptor captures its enum when the class is defined, so replacing
+the module-level enum afterwards no longer reaches it. Both patches therefore do two
+things: replace the enum (what fixes 3.6) *and* replace the setter (what fixes 3.7).
 
 ### 1. PluginManifest._data deserialization bug
 
 **Bug:** `PluginManifest.__init__` initialises `_data` as a plain `dict {}`. The `_update_from_json()` method only handles `ModelObject`, `ModelCollection`, `ModelDictionary`, and `list` — it silently **skips** plain `dict` properties. This means `get_object_model().plugins[id].data` is always `{}`.
 
-**Workaround:** Monkey-patch `PluginManifest.__init__` to replace `_data` with `ModelDictionary(False)` at import time in `meltingplot-config-daemon.py` (lines 24-36). This makes `_update_from_json` populate `plugin.data` correctly.
+**Workaround:** `_patch_plugin_manifest_data()` wraps `PluginManifest.__init__` and
+replaces `_data` with `ModelDictionary(False)`. This makes `_update_from_json` populate
+`plugin.data` correctly.
 
-**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+**On 3.7:** fixed upstream — `data = model_prop('data', ModelDictionary, ModelDictionary(False))`,
+where `_data` is that descriptor's storage. Assigning a fresh empty `ModelDictionary` there
+is exactly what the descriptor's own default does, so the patch is redundant but harmless.
 
 ### 2. No `get_file()` / `put_file()` methods on CommandConnection
 
@@ -123,21 +144,43 @@ These bugs exist in dsf-python v3.6-dev and are worked around in our daemon at s
 
 **Bug:** `BoardState(str, Enum)` in `dsf.object_model.boards.boards` only defines `unknown`, `flashing`, `flashFailed`, `resetting`, `running`. DSF may report additional states (e.g. `timedOut` when an expansion board doesn't respond). The `Board.state` property setter calls `BoardState(value)` which raises `ValueError` for unrecognised values. This crashes `get_object_model()` entirely — the daemon loses firmware version detection and directory mappings.
 
-**Workaround (two-part):**
-1. **Enum replacement:** Replace the entire `BoardState` class in `dsf.object_model.boards.boards` with a new enum that includes all original members plus `timedOut`.
-2. **Setter safety net:** Replace `Board.state`'s setter with one that uses the new enum and catches `ValueError`/`KeyError`, falling back to `BoardState.unknown` for any future unknown values.
+**Workaround (two-part), in `_patch_board_state()`:**
+1. **Enum replacement:** Replace `BoardState` in `dsf.object_model.boards.boards` with a
+   new enum that includes all original members plus `timedOut`. This is what fixes 3.6,
+   whose setter reads the module-level name.
+2. **Setter safety net:** Replace `Board.state`'s setter with one that uses the new enum
+   and catches `ValueError`/`KeyError`, falling back to `BoardState.unknown`. This is what
+   fixes 3.7, whose descriptor ignores the enum swap.
 
-**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+A wrong *type* (a number rather than a string) still raises `TypeError` on purpose: DSF
+sends JSON, so that would mean the library changed how it calls the setter, which is worth
+surfacing rather than papering over.
+
+**On 3.7:** `timedOut` is **still missing** upstream, so this patch is load-bearing on both
+generations.
 
 ### 6. NetworkInterfaceType enum missing `ethernet` value
 
 **Bug:** `NetworkInterfaceType(str, Enum)` in `dsf.object_model.network.network_interface_type` only defines `lan` and `wifi`. DSF 3.6.3-rc.1 reports `ethernet` for wired interfaces. The `NetworkInterface.type` setter calls `NetworkInterfaceType(value)` which raises `ValueError` for unrecognised values, crashing `get_object_model()` entirely.
 
-**Workaround (two-part):**
-1. **Enum replacement:** Replace the `NetworkInterfaceType` class in both `network_interface_type` and `network_interface` modules with one that includes `lan`, `wifi`, `ethernet`, and an `unknown` fallback.
-2. **Setter safety net:** Replace `NetworkInterface.type`'s setter with one that uses the new enum and catches `ValueError`/`KeyError`, falling back to `NetworkInterfaceType.unknown` for any future unknown values.
+**Workaround (two-part), in `_patch_network_interface_type()`:** the same shape as the
+`BoardState` patch — replace the enum in both `network_interface_type` and
+`network_interface` with one carrying `lan`, `wifi`, `ethernet` and an `unknown` fallback,
+and replace `NetworkInterface.type`'s setter.
 
-**Important:** The monkey-patch import is wrapped in `try/except ImportError: pass` so tests can run without the real dsf library installed.
+**On 3.7:** `ethernet` was added upstream — but `lan` was **removed**, so the same class of
+crash simply moved to the other value. The replacement enum carries both, which covers
+either library.
+
+### 7. DSF 3.7 API compatibility (checked, no change needed)
+
+`resolve_path`, `add_http_endpoint` and `set_plugin_data` keep their signatures in
+dsf-python 3.7. `resolve_path` still returns the raw `Response` rather than unwrapping it,
+so workaround 4 is still required. `set_plugin_data`'s `value` widened from `str` to
+`object`, which is compatible.
+
+**Not yet verified:** `get_object_model()` against a real DSF 3.7 SBC. That remains the
+release gate for the 3.7 package — the analysis above is source-level only.
 
 ## Development Setup
 

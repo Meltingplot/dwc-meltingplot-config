@@ -1,5 +1,5 @@
 import { shallowMount } from '@vue/test-utils'
-import BackupHistory from '../../src/components/BackupHistory.vue'
+import BackupHistory from '../../src/ui36/components/BackupHistory.vue'
 
 function mountComponent(propsData = {}) {
   return shallowMount(BackupHistory, {

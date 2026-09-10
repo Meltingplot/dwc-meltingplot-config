@@ -56,8 +56,11 @@ export function normalizeBackup(backup) {
 /**
  * Build the main page's state and actions.
  *
+ * The return type is deliberately left to inference: the DWC 3.7 templates are
+ * type-checked against it by vue-tsc, and a `@returns {object}` annotation would
+ * flatten it to `{}` and hide every binding.
+ *
  * @param {import('./host').Host} host DWC host adapter
- * @returns {object} Refs, computeds and actions to expose from `setup()`
  */
 export function useConfigPage(host) {
   const activeTab = ref(0)

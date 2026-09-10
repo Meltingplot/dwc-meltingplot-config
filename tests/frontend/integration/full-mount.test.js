@@ -1,7 +1,7 @@
 import { mount, createLocalVue } from '@vue/test-utils'
 import Vuex from 'vuex'
 import Vuetify from 'vuetify'
-import MeltingplotConfig from '../../../src/MeltingplotConfig.vue'
+import MeltingplotConfig from '../../../src/ui36/MeltingplotConfig.vue'
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 
 const localVue = createLocalVue()

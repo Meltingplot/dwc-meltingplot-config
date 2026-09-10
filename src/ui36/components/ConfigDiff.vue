@@ -200,7 +200,7 @@
 'use strict'
 
 import { toRef } from 'vue'
-import { useConfigDiff } from '../core/useConfigDiff'
+import { useConfigDiff } from '../../core/useConfigDiff'
 
 export default {
   name: 'ConfigDiff',

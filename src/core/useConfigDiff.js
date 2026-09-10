@@ -30,8 +30,9 @@ import {
  *
  * @param {import('vue').Ref<Array<object>>|Function} filesRef Reactive source
  *   of the file list (a ref, or a getter returning it)
+ * The return type is left to inference — see the note in `useConfigPage.js`.
+ *
  * @param {(event: string, payload?: *) => void} emit Component emit function
- * @returns {object} Refs, computeds and actions to expose from `setup()`
  */
 export function useConfigDiff(filesRef, emit) {
   const expandedPanels = ref([])

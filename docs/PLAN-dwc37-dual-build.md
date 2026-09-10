@@ -1,6 +1,7 @@
 # Plan: one repo, two plugin packages — DWC 3.6 and DWC 3.7
 
-**Status:** proposal, nothing implemented yet.
+**Status:** phases 1-3 implemented; phase 4 (the DWC 3.7 UI) and phase 5 (release) open.
+Deviations from the plan as written are noted inline under **Implementation notes**.
 **Reference implementation:** [jaysuk/ClosedLoopTuningPlugin](https://github.com/jaysuk/ClosedLoopTuningPlugin)
 (commits `4a55622` → `62efa70` → `39cbf7a` → `bfa001d` → `33e2791` on 2026‑08‑20 are the whole
 dual-build introduction, in that order; `docs/PLAN-dwc36-backport.md` there is the write-up).
@@ -374,11 +375,11 @@ never run there:
 Each phase ends with green CI and a commit that could ship. Order matters: 1 is a bug fix, 2 is the
 only phase that can regress the working 3.6 plugin, 3 proves the pipeline before the expensive UI work.
 
-### Phase 1 — pin the release build (small, do now)
+### Phase 1 — pin the release build (small, do now) — **done**
 - `release.yml`: resolve the latest **`v3.6.*`** tag instead of the latest tag overall.
 - No other change. Ships as its own PR.
 
-### Phase 2 — extract the seam and the composables (3.6 only, no behaviour change)
+### Phase 2 — extract the seam and the composables (3.6 only, no behaviour change) — **done**
 - Create `src/core/{host,api,diff,backend,useConfigPage,useConfigDiff,useBackupHistory}.js`.
 - Rewire the existing four SFCs to consume them via `setup()` (Options API stays for the rest of the
   component; no `<script setup>` on ui36 yet — least churn, `@vue/vue2-jest` is happier).
@@ -389,7 +390,7 @@ only phase that can regress the working 3.6 plugin, 3 proves the pipeline before
 - Build the 3.6 ZIP with today's CI and **smoke-test on a printer**: sync, diff, partial apply,
   backup, restore, backend auto-start after upgrade. This is the regression checkpoint.
 
-### Phase 3 — restructure and build machinery, with a stub ui37
+### Phase 3 — restructure and build machinery, with a stub ui37 — **done, except the live checks**
 - Move SFCs to `src/ui36/`, entry to `src/ui36/index.js`, adapter `src/ui36/host.js`.
 - Add `scripts/stage.js`, `scripts/build.js`; rework `scripts/build-zip.js` on top of `stage.js`;
   update `plugin-structure` and `plugin-registration` tests.
@@ -400,7 +401,7 @@ only phase that can regress the working 3.6 plugin, 3 proves the pipeline before
   started by `ensureBackendRunning` through the Pinia adapter, `/machine/MeltingplotConfig/status`
   answers. And the `-dwc36.zip` still installs on 3.6. And each is rejected by the other.
 
-### Phase 4 — the DWC 3.7 UI
+### Phase 4 — the DWC 3.7 UI — **open**
 - Port the four SFCs to Vuetify 4 as template-only `<script setup lang="ts">` components over the
   shared composables (translation table §6). Suggested order: `ConfigStatus` (props only) →
   `MeltingplotConfig` shell with tabs → `ConfigDiff` → `BackupHistory` (treeview last). Build after
@@ -408,7 +409,7 @@ only phase that can regress the working 3.6 plugin, 3 proves the pipeline before
 - `tests/ui37/` Vitest project; run `core/*` tests there too; ESLint overrides.
 - Live check on DWC 3.7 for every flow in the Phase 2 smoke list.
 
-### Phase 5 — docs and release
+### Phase 5 — docs and release — **docs done, release open**
 - README: two ZIPs, which one to install, local build instructions (`DWC36_DIR`, `DWC37_DIR`).
 - CLAUDE.md: layout, "never index `plugin.data` directly", the two test runners, the Vue 2.7
   reactivity rule for `core/`, the stage-script rule ("the raw repo is never handed to a DWC builder").
@@ -443,3 +444,70 @@ similar near-1:1 ratio here.
    matrix leg, not one for the job.
 10. **`sbcDsfVersion`** is resolved per build too: the 3.7 ZIP will refuse a DSF 3.6 SBC. That is
     intended; document it in the README next to the download links.
+
+
+---
+
+## 10. Implementation notes (phases 1-3)
+
+What the implementation does differently from the plan above, and what it confirmed.
+
+### Confirmed against the real toolchains
+
+- Both legs build. The 3.6 package comes out with `dwcVersion: "3.6"` and a populated
+  `dwcFiles`/`dsfFiles`; the 3.7 package with `dwcVersion: "3.7"`, `sbcDsfVersion: "3.7"`
+  and a 13 kB IIFE bundle. `build-plugin-pkg` is right for both (finding 2).
+- DWC 3.6's `build-plugin-pkg` copies the staged tree to `src/plugins/<id>/` and picks up
+  the `index.js` that staging already wrote there; it also pre-cleans that directory
+  itself, so `build.js`'s own `rm -rf` is belt-and-braces rather than the only guard
+  (landmine 7 is milder than stated).
+- `findEntryFile` in 3.7 accepts `index.ts`, `index.js`, `dwc-src/index.*`, `src/index.*`,
+  so `src/index.ts` for the 3.7 stage and `src/index.js` for 3.6 both work.
+- `typeCheckPlugin` includes only `**/*.ts`, `**/*.tsx`, `**/*.vue` from the plugin dir —
+  `src/core/*.js` is pulled in through imports and inferred, not error-checked. DWC's
+  tsconfig has `allowJs: true` and `strict: true`.
+- `-srcmap.zip` is real: the 3.7 build emitted one next to the package (landmine 6).
+  `build.js` filters it out by suffix rather than by sort order.
+
+### Deviations
+
+- **An extra core module.** `src/core/status.js` holds the sync-status chip map. The plan's
+  file list did not have one, but the map is needed by both generations and belongs
+  neither in `diff.js` nor in `host.js`.
+- **No `scripts/check-sfc.js`.** It was listed as optional; the real builds cover it.
+- **`build-zip.js` takes a generation argument** and writes `-dwc<gen>` names, driven by
+  `stage.js`. It also honours `ZIP_OUT_DIR` so the plugin-structure tests do not wipe a
+  developer's `dist/`.
+- **`scripts/ci-local.sh` gained `build36` / `build37` stages** instead of the plan's
+  `build.bat` / `build36.bat` pair. When the host Node is older than 22, the 3.7 leg runs
+  in a `node:22` container.
+- **Test stores now mirror DWC's real shape.** They used a flat module literally named
+  `machine/model`, which only worked because `mapState('machine/model')` resolves by
+  namespace. The Vuex host adapter reads `store.state.machine.model`, so the test stores
+  became a namespaced `machine` module with a `model` child — which is what DWC has.
+- **Normalisation splices rather than patches.** The plan says entries carry every field
+  from creation. That holds for entries created by `loadDiff` / `loadBackups`, but a
+  component can also be handed a raw list directly (tests do). Patching those in place
+  would add properties to an already-reactive object, which Vue 2.7 cannot observe, so the
+  watcher replaces the entries with normalised ones via `splice`.
+- **Two JSDoc changes were forced by vue-tsc**, and both are worth keeping:
+  - `@returns {object}` on the composables flattened their return type to `{}` and hid
+    every binding from the 3.7 templates. The annotations are gone; the return type is
+    inferred.
+  - `readPluginData()` built its result in a loop over a defaults map, which also inferred
+    as `{}`. It now writes the six keys out, and `pluginDataValue()` is `@template`-typed,
+    so the templates get real `string` properties.
+- **`ui37/host.ts` imports the `Host` type from `core/host.js`** rather than declaring its
+  own interface — a locally declared one drifted immediately (`model(): unknown` vs
+  `object`) and vue-tsc rejected it.
+
+### Still to verify on hardware
+
+- The phase-2 smoke list on a DWC 3.6 printer: sync, diff, partial apply, backup, restore,
+  backend auto-start after an upgrade.
+- The phase-3 live checks: the `-dwc37.zip` installs on DWC 3.7 + DSF 3.7, the page
+  appears, `ensureBackendRunning` starts the daemon through the Pinia adapter,
+  `/machine/MeltingplotConfig/status` answers — and each package is rejected by the other
+  generation.
+- Section 7 (the Python backend against DSF 3.7 / dsf-python 3.7) is untouched and remains
+  a release gate for the 3.7 package.

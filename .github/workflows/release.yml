@@ -1,13 +1,15 @@
 name: Release
 
-# Builds the plugin against the latest stable DuetWebControl release and
-# publishes a GitHub Release.
+# Builds both plugin packages — one for DuetWebControl 3.6 and one for 3.7 —
+# and publishes a GitHub Release carrying both.
 #
 # Trigger: push to the `release` branch (or run manually via workflow_dispatch).
 # Version: taken from the `version` field in plugin.json (override with the
-#   workflow_dispatch `version` input). The workflow creates the matching
-#   `vX.Y.Z` git tag and GitHub Release itself, so no tag needs to be pushed
-#   beforehand. To cut a new release, bump plugin.json on the `release` branch.
+#   workflow_dispatch `version` input). Both packages share that one version;
+#   the `-dwc36` / `-dwc37` suffix tells the assets apart. The workflow creates
+#   the matching `vX.Y.Z` git tag and GitHub Release itself, so no tag needs to
+#   be pushed beforehand. To cut a new release, bump plugin.json and land it on
+#   `main`, then merge `main` into `release`.
 on:
   push:
     branches: [release]
@@ -50,38 +52,22 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run lint
-      - run: npx jest tests/frontend/*.test.js --verbose
+      - run: npx jest tests/frontend/*.test.js tests/frontend/core/ --verbose
       - run: npx jest tests/frontend/integration/ --verbose
 
-  release:
-    name: Build & Publish Release
+  # Resolve the version once so both build legs and the publish step agree.
+  version:
+    name: Resolve version
     runs-on: ubuntu-latest
     needs: [python-tests, frontend-tests]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Checkout plugin
-        uses: actions/checkout@v6
-        with:
-          path: plugin
-          fetch-depth: 0
-
-      - name: Resolve latest stable DuetWebControl tag
-        id: dwc
-        run: |
-          ref=$(git ls-remote --tags --refs https://github.com/Duet3D/DuetWebControl.git \
-            | awk -F/ '{print $NF}' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -n1)
-          if [ -z "$ref" ]; then
-            echo "::error::Could not resolve a stable DuetWebControl tag"
-            exit 1
-          fi
-          echo "Latest stable DuetWebControl tag: $ref"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
 
       - name: Determine plugin version
         id: version
-        working-directory: plugin
         run: |
           version="${{ github.event.inputs.version }}"
           if [ -z "$version" ]; then
@@ -94,8 +80,6 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          # Stamp the resolved version into plugin.json/package.json for the build.
-          node -e "const fs=require('fs');for(const f of ['plugin.json','package.json']){const j=JSON.parse(fs.readFileSync(f));j.version=process.argv[1];fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');}" "$version"
 
       - name: Ensure release does not already exist
         env:
@@ -106,6 +90,59 @@ jobs:
             exit 1
           fi
 
+  build:
+    name: Build DWC ${{ matrix.dwc_major }} package
+    runs-on: ubuntu-latest
+    needs: [version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # DWC 3.6: Vue 2.7 / Vuetify 2.7, vue-cli + webpack. Node 18 is proven.
+          - gen: "36"
+            dwc_major: "3.6"
+            node: "18"
+          # DWC 3.7: Vue 3.5 / Vuetify 4, Vite 8 + vue-tsc — needs Node 22+.
+          - gen: "37"
+            dwc_major: "3.7"
+            node: "22"
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v6
+        with:
+          path: plugin
+          fetch-depth: 0
+
+      - name: Resolve DuetWebControl tag for this generation
+        id: dwc
+        env:
+          MAJOR: ${{ matrix.dwc_major }}
+        run: |
+          # Pinned per generation on purpose: resolving the highest tag overall
+          # would compile the Vue 2.7 sources with 3.7's Vite toolchain the day
+          # Duet3D tags v3.7.0. Prefer a stable tag of the series, and fall back
+          # to the newest prerelease while the series has no stable tag yet.
+          tags=$(git ls-remote --tags --refs https://github.com/Duet3D/DuetWebControl.git | awk -F/ '{print $NF}')
+          ref=$(echo "$tags" | grep -E "^v${MAJOR//./\\.}\.[0-9]+$" | sort -V | tail -n1)
+          if [ -z "$ref" ]; then
+            ref=$(echo "$tags" | grep -E "^v${MAJOR//./\\.}\.[0-9]+-" | sort -V | tail -n1)
+            if [ -n "$ref" ]; then
+              echo "::warning::No stable DuetWebControl ${MAJOR} tag yet — building against prerelease $ref"
+            fi
+          fi
+          if [ -z "$ref" ]; then
+            echo "::error::Could not resolve a DuetWebControl ${MAJOR} tag"
+            exit 1
+          fi
+          echo "DuetWebControl ${MAJOR} tag: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp the release version
+        working-directory: plugin
+        run: |
+          node -e "const fs=require('fs');for(const f of ['plugin.json','package.json']){const j=JSON.parse(fs.readFileSync(f));j.version=process.argv[1];fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');}" \
+            "${{ needs.version.outputs.version }}"
+
       - name: Checkout DuetWebControl
         uses: actions/checkout@v6
         with:
@@ -113,46 +150,128 @@ jobs:
           ref: ${{ steps.dwc.outputs.ref }}
           path: DuetWebControl
 
-      - name: Set up Node.js
+      - name: Set up Node.js ${{ matrix.node }}
         uses: actions/setup-node@v6
         with:
-          node-version: "18"
+          node-version: ${{ matrix.node }}
 
       - name: Install DWC dependencies
         working-directory: DuetWebControl
         run: npm install
 
-      - name: Build plugin
-        working-directory: DuetWebControl
-        run: npm run build-plugin ../plugin
+      - name: Build plugin package
+        working-directory: plugin
+        env:
+          DWC36_DIR: ${{ github.workspace }}/DuetWebControl
+          DWC37_DIR: ${{ github.workspace }}/DuetWebControl
+        run: node scripts/build.js ${{ matrix.gen }}
 
-      - name: Locate built ZIP
-        id: zip
+      - name: Verify build output
+        working-directory: plugin
+        env:
+          EXPECTED_DWC_VERSION: ${{ matrix.dwc_major }}
+          GEN: ${{ matrix.gen }}
         run: |
-          zip=$(ls DuetWebControl/dist/MeltingplotConfig-*.zip | head -n1)
-          echo "Built ZIP: $zip"
-          echo "path=$zip" >> "$GITHUB_OUTPUT"
+          zip=$(ls dist/MeltingplotConfig-*-dwc${GEN}.zip)
+          echo "Built $zip"
+          unzip -l "$zip"
 
-      - name: Extract plugin ZIP for artifact upload
-        run: |
-          mkdir -p artifact-content
-          unzip "${{ steps.zip.outputs.path }}" -d artifact-content
+          cat > /tmp/verify-manifest.mjs <<'JS'
+          // A green build does not mean the page loads: DWC 3.7 takes the
+          // resource list from manifest.dwcFiles, and an empty list makes it
+          // register the plugin as SBC-only and never load the UI.
+          let raw = "";
+          process.stdin.on("data", (chunk) => { raw += chunk; });
+          process.stdin.on("end", () => {
+            const manifest = JSON.parse(raw);
+            const fail = (message) => { console.error(`::error::${message}`); process.exitCode = 1; };
+            if (manifest.dwcVersion !== process.env.EXPECTED_DWC_VERSION) {
+              fail(`dwcVersion is ${manifest.dwcVersion}, expected ${process.env.EXPECTED_DWC_VERSION}`);
+            }
+            if (!(manifest.dwcFiles || []).some((file) => file.endsWith(".js"))) {
+              fail("dwcFiles carries no JS resource — DWC would treat this as an SBC-only plugin");
+            }
+            if (!(manifest.dsfFiles || []).includes("meltingplot-config-daemon.py")) {
+              fail("dsfFiles is missing the daemon");
+            }
+            console.log(`dwcVersion=${manifest.dwcVersion}`);
+            console.log(`dwcFiles=${(manifest.dwcFiles || []).join(", ")}`);
+          });
+          JS
+          unzip -p "$zip" plugin.json | node /tmp/verify-manifest.mjs
 
-      - name: Upload plugin ZIP artifact
+          unzip -l "$zip" | grep -qE 'dwc/js/MeltingplotConfig.*\.js' \
+            || { echo "::error::No compiled JS bundle in the package"; exit 1; }
+
+      - name: Upload package for the publish step
         uses: actions/upload-artifact@v7
         with:
-          name: MeltingplotConfig-plugin
-          path: artifact-content/*
+          name: MeltingplotConfig-plugin-dwc${{ matrix.gen }}
+          # Sourcemap archives sort before the real ZIP ('-' < '.'), so they are
+          # excluded explicitly rather than filtered downstream.
+          path: |
+            plugin/dist/MeltingplotConfig-*-dwc${{ matrix.gen }}.zip
+            !plugin/dist/*-srcmap.zip
           retention-days: 90
+
+      - name: Record the DWC ref that was used
+        run: |
+          mkdir -p refs
+          echo "DuetWebControl ${{ matrix.dwc_major }}: ${{ steps.dwc.outputs.ref }}" > "refs/dwc${{ matrix.gen }}.txt"
+
+      - name: Upload DWC ref note
+        uses: actions/upload-artifact@v7
+        with:
+          name: dwc-ref-${{ matrix.gen }}
+          path: refs/dwc${{ matrix.gen }}.txt
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [version, build]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download both packages
+        uses: actions/download-artifact@v6
+        with:
+          pattern: MeltingplotConfig-plugin-dwc*
+          path: assets
+          merge-multiple: true
+
+      - name: Download DWC ref notes
+        uses: actions/download-artifact@v6
+        with:
+          pattern: dwc-ref-*
+          path: refs
+          merge-multiple: true
+
+      - name: Check both packages are present
+        run: |
+          ls -l assets
+          for gen in 36 37; do
+            ls assets/MeltingplotConfig-*-dwc${gen}.zip >/dev/null 2>&1 \
+              || { echo "::error::The DWC 3.${gen#3} package is missing"; exit 1; }
+          done
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            "${{ steps.zip.outputs.path }}" \
+          notes=$(cat refs/*.txt)
+          gh release create "${{ needs.version.outputs.tag }}" \
+            assets/MeltingplotConfig-*.zip \
             --repo "${{ github.repository }}" \
-            --title "MeltingplotConfig ${{ steps.version.outputs.version }}" \
+            --title "MeltingplotConfig ${{ needs.version.outputs.version }}" \
             --target "${{ github.sha }}" \
-            --notes "Built against DuetWebControl ${{ steps.dwc.outputs.ref }}." \
+            --notes "Two packages, same plugin version — install the one matching your DuetWebControl:
+
+          * \`-dwc36.zip\` — DuetWebControl 3.6 (requires DSF 3.6)
+          * \`-dwc37.zip\` — DuetWebControl 3.7 (requires DSF 3.7)
+
+          Each is rejected by the other generation at install time.
+
+          Built against:
+          $notes" \
             --generate-notes

@@ -173,7 +173,7 @@ import ConfigStatus from './components/ConfigStatus.vue'
 import ConfigDiff from './components/ConfigDiff.vue'
 import BackupHistory from './components/BackupHistory.vue'
 import { createHost } from './host'
-import { useConfigPage } from './core/useConfigPage'
+import { useConfigPage } from '../core/useConfigPage'
 
 export default {
   name: 'MeltingplotConfig',

@@ -68,7 +68,7 @@
 'use strict'
 
 import { computed } from 'vue'
-import { syncStatusInfo } from '../core/status'
+import { syncStatusInfo } from '../../core/status'
 
 export default {
   name: 'ConfigStatus',

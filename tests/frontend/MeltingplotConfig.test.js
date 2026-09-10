@@ -1,6 +1,6 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils';
 import Vuex from 'vuex';
-import MeltingplotConfig from '../../src/MeltingplotConfig.vue';
+import MeltingplotConfig from '../../src/ui36/MeltingplotConfig.vue';
 import { normalizeFile } from '../../src/core/diff';
 import { normalizeBackup } from '../../src/core/useConfigPage';
 

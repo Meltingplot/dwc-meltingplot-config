@@ -9,7 +9,7 @@
  * Wrap a DWC root store in a Host.
  *
  * @param {object} store Root Vuex store
- * @returns {import('./core/host').Host} Adapter for the shared core
+ * @returns {import('../core/host').Host} Adapter for the shared core
  */
 export function createHost(store) {
   return {

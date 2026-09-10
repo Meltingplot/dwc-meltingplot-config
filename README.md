@@ -230,6 +230,29 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs three stages:
 
 Triggers: push to `main`/`master`, pull requests to `main`/`master`, manual dispatch with optional DWC ref override.
 
+### Running CI locally
+
+`scripts/ci-local.sh` reproduces all three stages on a workstation. Everything it
+needs lives in the gitignored `.ci-local/` directory (Python virtualenv,
+DuetWebControl checkout, built ZIP) — nothing is installed system-wide.
+
+```bash
+scripts/ci-local.sh            # all three stages (python, frontend, build)
+scripts/ci-local.sh python     # pytest in .ci-local/venv
+scripts/ci-local.sh frontend   # npm ci + lint + jest unit/integration
+scripts/ci-local.sh build      # DuetWebControl checkout + build-plugin
+scripts/ci-local.sh matrix     # pytest on Python 3.9-3.12 via Docker
+```
+
+The `matrix` stage is the only one that needs Docker; it mirrors the CI's
+Python version matrix, which a single local interpreter cannot cover. The
+`build` stage temporarily runs `scripts/version.js --write` (as CI does) and
+restores `plugin.json` / `package.json` afterwards, so the working tree stays
+clean. The resulting ZIP is copied to `.ci-local/dist/`.
+
+Overrides: `DWC_REF=<branch|tag>` selects the DuetWebControl ref (default
+`v3.6-dev`), `PYTHON=<interpreter>` selects the interpreter used for the venv.
+
 ## License
 
 LGPL-3.0-or-later

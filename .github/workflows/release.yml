@@ -216,16 +216,21 @@ jobs:
           unzip -l "$zip" | grep -qE 'dwc/js/MeltingplotConfig.*\.js' \
             || { echo "::error::No compiled JS bundle in the package"; exit 1; }
 
-      - name: Upload package for the publish step
+      # Plumbing between the build legs and the publish step, which needs the
+      # package as a file to attach it. GitHub wraps an artifact in an archive
+      # of its own, so downloading this one by hand gives a ZIP inside a ZIP —
+      # the installable packages are the assets on the GitHub Release, and the
+      # short retention keeps this from being mistaken for one of them.
+      - name: Pass the package to the publish step
         uses: actions/upload-artifact@v7
         with:
-          name: MeltingplotConfig-plugin-dwc${{ matrix.gen }}
+          name: release-asset-dwc${{ matrix.gen }}
           # Sourcemap archives sort before the real ZIP ('-' < '.'), so they are
           # excluded explicitly rather than filtered downstream.
           path: |
             plugin/dist/MeltingplotConfig-*-dwc${{ matrix.gen }}.zip
             !plugin/dist/*-srcmap.zip
-          retention-days: 90
+          retention-days: 1
 
       - name: Record the DWC ref that was used
         run: |
@@ -249,7 +254,7 @@ jobs:
       - name: Download both packages
         uses: actions/download-artifact@v6
         with:
-          pattern: MeltingplotConfig-plugin-dwc*
+          pattern: release-asset-dwc*
           path: assets
           merge-multiple: true
 

@@ -352,6 +352,14 @@ Each leg verifies the packaged manifest: the right `dwcVersion`, a populated `dw
 and the daemon in `dsfFiles`. The 3.7 leg additionally runs `vue-tsc` (inside
 `build-plugin-pkg`) against the templates.
 
+**Artifacts carry the package's contents, never the package file.** GitHub wraps an
+artifact in an archive of its own, so uploading `dist/*.zip` hands the downloader a ZIP
+inside a ZIP, which DWC rejects. Unpacking first makes that wrapper the installable
+package; the unpack step asserts `plugin.json` ends up at the root. `release.yml` is the
+exception — its `release-asset-dwc*` artifacts are plumbing that carries the package file
+to the publish step, which attaches it to the Release. Those are named and retained (1 day)
+to make clear they are not the download.
+
 **Triggers:** push to `main`/`master`, pull requests to `main`/`master`, manual
 `workflow_dispatch` with per-generation DWC ref overrides.
 

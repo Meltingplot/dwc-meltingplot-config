@@ -194,9 +194,29 @@ jobs:
           unzip -l "$zip" | grep -q 'dsf/meltingplot-config-daemon.py' \
             || { echo "::error::The Python backend is missing from the package"; exit 1; }
 
-      - name: Upload plugin ZIP
+      # GitHub wraps whatever it is given in an archive of its own, so uploading
+      # the package as a file would hand the downloader a ZIP inside a ZIP.
+      # Uploading its *contents* instead makes that wrapper the installable
+      # plugin package: plugin.json at the root, next to dwc/ and dsf/.
+      - name: Unpack the package for upload
+        working-directory: plugin
+        env:
+          GEN: ${{ matrix.gen }}
+        run: |
+          # Resolved rather than globbed: a bare glob handed to unzip would turn
+          # any second match into a file filter instead of a second archive.
+          zip=$(ls dist/MeltingplotConfig-*-dwc${GEN}.zip)
+          test "$(printf '%s\n' "$zip" | wc -l)" -eq 1 \
+            || { echo "::error::Expected exactly one dwc${GEN} package, got: $zip"; exit 1; }
+
+          mkdir -p artifact-content
+          unzip -q "$zip" -d artifact-content
+          test -f artifact-content/plugin.json \
+            || { echo "::error::plugin.json is not at the root of the package"; exit 1; }
+
+      - name: Upload plugin package
         uses: actions/upload-artifact@v7
         with:
           name: MeltingplotConfig-plugin-dwc${{ matrix.gen }}
-          path: plugin/dist/MeltingplotConfig-*-dwc${{ matrix.gen }}.zip
+          path: plugin/artifact-content/*
           retention-days: 30

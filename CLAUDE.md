@@ -25,6 +25,7 @@ dwc-meltingplot-config/
 ├── .gitignore
 ├── CLAUDE.md                          # This file
 ├── PLAN.md                            # Detailed architecture and implementation plan
+├── docs/PLAN-dwc37-dual-build.md      # Plan: build one DWC 3.6 and one DWC 3.7 package from this repo
 └── README.md                          # User-facing build and install docs
 ```
 

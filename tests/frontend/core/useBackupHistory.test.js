@@ -1,5 +1,4 @@
-import { buildFileTree, displayFiles } from '../../../src/core/useBackupHistory'
-import { normalizeBackup } from '../../../src/core/useConfigPage'
+import { buildFileTree, displayFiles, normalizeBackup } from '../../../src/core/useBackupHistory'
 
 describe('core/useBackupHistory helpers', () => {
     describe('buildFileTree', () => {

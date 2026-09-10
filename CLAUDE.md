@@ -24,10 +24,11 @@ dwc-meltingplot-config/
 │   │   ├── host.js                    #   Vuex adapter
 │   │   ├── MeltingplotConfig.vue      #   Main page: Status/Changes/History/Settings tabs
 │   │   └── components/{ConfigStatus,ConfigDiff,BackupHistory}.vue
-│   ├── ui37/                          # DWC 3.7 UI — Vue 3.5 + Vuetify 4 (in progress)
+│   ├── ui37/                          # DWC 3.7 UI — Vue 3.5 + Vuetify 4
 │   │   ├── index.ts                   #   Entry — registerRoute from '@/plugins', unregister on unload
 │   │   ├── host.ts                    #   Pinia adapter
-│   │   └── MeltingplotConfig.vue      #   Status page (<script setup lang="ts">)
+│   │   ├── MeltingplotConfig.vue      #   Main page (<script setup lang="ts">)
+│   │   └── components/{ConfigStatus,ConfigDiff,BackupHistory}.vue
 │   ├── routes.js / store.js           # Jest-only stubs for DWC's @/routes and @/store
 │   └── __mocks__/                     # Jest manual mocks
 ├── dsf/                               # SBC backend (Python 3) — identical in both packages
@@ -233,9 +234,43 @@ Our testing strategy fills this gap with four layers:
   - `user-flows.test.js` — End-to-end user flows with mock backend
   - `api-contract.test.js` — Validates daemon API response shapes match frontend component expectations
 
-The DWC 3.7 templates are not covered by Jest — two Vue majors cannot share one
-`node_modules`. They are checked by `vue-tsc` during the 3.7 build leg, which validates
-the templates against Vuetify 4's real prop types.
+### DWC 3.7 UI (Vitest)
+
+Two Vue majors cannot share one `node_modules`, so the 3.7 tests live in their own npm
+package at `tests/ui37/`.
+
+- **Framework:** Vitest 2 + @vue/test-utils 2 + happy-dom, with real Vuetify 4
+- **Install & run:** `npm --prefix tests/ui37 ci && npm --prefix tests/ui37 test`
+  (or `npm run test:ui37`; needs **Node 22+**, or `scripts/ci-local.sh ui37` which falls
+  back to a container)
+- **What it covers:**
+  - `specs/*.spec.js` — the four DWC 3.7 components mounted with real Vuetify, plus the
+    entry point's route registration, backend recovery and `dwcPluginUnloaded` handling
+  - **the whole of `tests/frontend/core/`, a second time** — the shared logic run under
+    Vue 3's reactivity, which is what proves it really is generation-neutral
+- **Mocks:** `mocks/plugins.js`, `mocks/machineStore.js`, `mocks/events.js` stand in for
+  DWC's `@/plugins`, `@/stores/machine` and `@/utils/events`. The machine-store mock keeps
+  `plugin.data` in a **Map**, as DWC 3.7 does — the difference `pluginDataValue()` absorbs.
+
+Three things in `vitest.config.mjs` are load-bearing; changing them breaks the run in ways
+whose error messages do not point at the cause:
+
+1. `resolve.alias` maps `vue` and `vuetify` to **this** package's copies. Vite resolves
+   bare imports from the project root, where they are Vue 2 / Vuetify 2, so without the
+   aliases components render nothing.
+2. Those aliases are **anchored regexes**, not plain strings. A string alias also rewrites
+   subpaths, turning `vuetify/components` into a bare directory path that no longer
+   resolves through the package's exports map — hence the separate subpath entries.
+3. `server.fs.allow` names the repository root. The config lives in `tests/ui37/` but the
+   specs import from `src/` and `tests/frontend/`; without it every import fails with
+   "Does the file exist?" for a file that plainly does.
+
+On top of that, `vue-tsc` type-checks the 3.7 templates during the build leg, which is what
+catches a Vuetify 4 prop that silently changed meaning.
+
+**Props are not deep-reactive in either generation's test setup**, so a spec that mutates
+an entry after mounting must hold the list in `reactive()` — that is what the parent's ref
+does in the real app.
 
 ## Linting & Formatting
 
@@ -262,7 +297,8 @@ GitHub Actions workflow at `.github/workflows/ci.yml`:
 
 1. **Python Tests** — `pytest` on Python 3.10, 3.11, 3.12
 2. **Frontend Lint & Tests** — `npm run lint` + unit, core and integration tests on Node 18
-3. **Build** — a two-leg matrix:
+3. **DWC 3.7 UI Tests** — Vitest in `tests/ui37/` on Node 22
+4. **Build** — a two-leg matrix:
 
 | `gen` | DWC ref | Node | Artifact |
 |---|---|---|---|

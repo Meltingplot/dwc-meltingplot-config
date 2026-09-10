@@ -11,6 +11,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { apiBlob, apiGet, apiPost, downloadBlob, query } from './api'
 import { PLUGIN_ID, isBackendRunning, readPluginData } from './host'
 import { normalizeFile } from './diff'
+import { normalizeBackup } from './useBackupHistory'
 import { startBackend as startSbcBackend } from './backend'
 
 /** How long to wait for the daemon to register its HTTP endpoints after start. */
@@ -26,32 +27,6 @@ export const SYNC_INTERVAL_OPTIONS = [
   { text: 'On boot', value: 'boot' },
   { text: 'Daily', value: 'daily' }
 ]
-
-/**
- * Give a backup entry every field the history UI will ever set on it.
- *
- * Same reactivity rule as `normalizeFile` — Vue 2.7 cannot observe properties
- * added after the object became reactive.
- *
- * @param {object} backup Backup entry from `GET /backups`
- * @returns {object} Normalised copy
- */
-export function normalizeBackup(backup) {
-  return {
-    expanded: false,
-    loadingFiles: false,
-    loadingDiff: false,
-    loadingContent: false,
-    changedFiles: null,
-    files: null,
-    activeNodes: [],
-    selectedFile: null,
-    fileDiff: null,
-    fileContent: null,
-    viewMode: 'diff',
-    ...backup
-  }
-}
 
 /**
  * Build the main page's state and actions.

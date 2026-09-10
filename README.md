@@ -33,9 +33,6 @@ Each package is rejected by the other generation at install time, so picking the
 file gives an error rather than a broken install. The Python backend is identical in
 both.
 
-> The DWC 3.7 interface is still being built out. It shows sync status and starts the
-> backend; use the 3.6 package for diffing, applying and restoring until it is complete.
-
 ## Building
 
 The DWC frontend is built by DWC's own build system — one build per generation, from the
@@ -137,10 +134,14 @@ dwc-meltingplot-config/
 │   │       ├── ConfigStatus.vue       #   Status dashboard (FW version, sync status, branch)
 │   │       ├── ConfigDiff.vue         #   Diff viewer with hunk-level checkboxes and apply
 │   │       └── BackupHistory.vue      #   Backup list with download, restore, and delete
-│   ├── ui37/                          # DWC 3.7 UI — Vue 3.5 + Vuetify 4 (in progress)
+│   ├── ui37/                          # DWC 3.7 UI — Vue 3.5 + Vuetify 4
 │   │   ├── index.ts                   #   Entry point — registers and unregisters the route
 │   │   ├── host.ts                    #   Pinia adapter
-│   │   └── MeltingplotConfig.vue      #   Status page
+│   │   ├── MeltingplotConfig.vue      #   Main page: Status/Changes/History/Settings tabs
+│   │   └── components/
+│   │       ├── ConfigStatus.vue       #   Status dashboard
+│   │       ├── ConfigDiff.vue         #   Diff viewer with hunk-level checkboxes and apply
+│   │       └── BackupHistory.vue      #   Backup list with download, restore, and delete
 │   ├── routes.js                      # Stub for DWC's route registration API (Jest only)
 │   └── store.js                       # Stub for DWC's Vuex store (Jest only)
 ├── dsf/                               # SBC backend (Python 3) — identical in both packages
@@ -153,7 +154,9 @@ dwc-meltingplot-config/
 │   ├── build-zip.js                   # Standalone structure-only ZIP builder for CI
 │   ├── ci-local.sh                    # Run the CI pipeline on a workstation
 │   └── version.js                     # Version computation from git tags
-├── tests/                             # Backend and frontend test suites
+├── tests/
+│   ├── frontend/                      # Jest (Vue 2.7): shared core + the DWC 3.6 UI
+│   └── ui37/                          # Vitest (Vue 3.5): the DWC 3.7 UI + the core again
 ├── .eslintrc.js                       # ESLint config (per-generation overrides)
 ├── .gitignore
 ├── babel.config.js                    # Babel config for Jest
@@ -269,7 +272,19 @@ Test files:
 - **Run:** `npm test` (all tests), `npm run test:unit` (unit only), `npm run test:integration` (integration only)
 
 The suite runs the shared `src/core/` logic and the DWC 3.6 components under Vue 2.7.
-The DWC 3.7 templates are checked by `vue-tsc` during the 3.7 build leg.
+
+### DWC 3.7 UI (Vitest)
+
+Two Vue majors cannot share one `node_modules`, so the 3.7 tests are their own npm package.
+
+- **Framework:** Vitest 2 + @vue/test-utils 2 + happy-dom, with real Vuetify 4
+- **Install & run:** `npm --prefix tests/ui37 ci && npm run test:ui37` — needs **Node 22+**
+  (`scripts/ci-local.sh ui37` falls back to a container on an older Node)
+- It mounts the four DWC 3.7 components and the entry point, **and runs the whole of
+  `tests/frontend/core/` a second time** under Vue 3's reactivity — which is what proves
+  the shared logic really is generation-neutral.
+
+The 3.7 templates are additionally type-checked by `vue-tsc` during the 3.7 build leg.
 
 Test files:
 
@@ -312,7 +327,8 @@ GitHub Actions workflow at `.github/workflows/ci.yml`:
 
 1. **Python Tests** — `pytest` with coverage on Python 3.10, 3.11, 3.12
 2. **Frontend Lint & Tests** — `npm run lint` + unit, core and integration tests on Node.js 18
-3. **Build** — a two-leg matrix, one package per DWC generation:
+3. **DWC 3.7 UI Tests** — Vitest in `tests/ui37/` on Node.js 22
+4. **Build** — a two-leg matrix, one package per DWC generation:
    | Leg | DuetWebControl | Node | Artifact |
    |---|---|---|---|
    | `36` | `v3.6-dev` | 18 | `MeltingplotConfig-plugin-dwc36` |
@@ -338,18 +354,19 @@ in the gitignored `.ci-local/` directory (Python virtualenv, two DuetWebControl 
 built ZIPs) — nothing is installed system-wide.
 
 ```bash
-scripts/ci-local.sh            # python, frontend, both build legs
+scripts/ci-local.sh            # python, frontend, ui37, both build legs
 scripts/ci-local.sh python     # pytest in .ci-local/venv
 scripts/ci-local.sh frontend   # npm ci + lint + jest unit/core/integration
+scripts/ci-local.sh ui37       # Vitest: the DWC 3.7 UI + the core under Vue 3
 scripts/ci-local.sh build36    # DWC 3.6 checkout + build.js 36
 scripts/ci-local.sh build37    # DWC 3.7 checkout + build.js 37
 scripts/ci-local.sh matrix     # pytest on Python 3.10-3.12 via Docker
 ```
 
 The `matrix` stage needs Docker; it mirrors the CI's Python version matrix, which a
-single local interpreter cannot cover. `build37` needs **Node 22+** for the Vite 8 /
-TypeScript 6 toolchain — when the host Node is older, it runs the leg in a `node:22`
-container instead, so Docker is required in that case too.
+single local interpreter cannot cover. `ui37` and `build37` need **Node 22+** — when the
+host Node is older, they run in a `node:22` container instead, so Docker is required in
+that case too.
 
 Both build stages temporarily run `scripts/version.js --write` (as CI does) and restore
 `plugin.json` / `package.json` afterwards, so the working tree stays clean. The resulting

@@ -4,7 +4,8 @@ import path from 'path'
 import { describe, it, expect, beforeAll } from '@jest/globals'
 
 const ROOT = path.resolve(__dirname, '..', '..', '..')
-const DIST_DIR = path.join(ROOT, 'dist')
+// Its own scratch directory: wiping dist/ would delete a real build
+const DIST_DIR = path.join(ROOT, '.build', 'structure-zips')
 
 const VALID_SBC_PERMISSIONS = new Set([
   'none',
@@ -39,22 +40,61 @@ const VALID_SBC_PERMISSIONS = new Set([
   'superUser',
 ])
 
-let zipPath
-let zipEntries
+/** Both packages this repository produces, from the same source tree. */
+const GENERATIONS = ['36', '37']
+
+/** Entry-point extension per generation — the 3.7 UI is TypeScript. */
+const ENTRY_EXT = { 36: 'js', 37: 'ts' }
+
+/** gen -> { zipPath, zipEntries } */
+const packages = {}
+
+/**
+ * Every .vue file of one generation's UI, relative to src/ui<gen>.
+ *
+ * Derived from the tree rather than hard-coded so the expectation keeps up as
+ * the 3.7 UI grows.
+ */
+function vueFilesOf(gen) {
+  const base = path.join(ROOT, 'src', `ui${gen}`)
+  const found = []
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.name.endsWith('.vue')) {
+        found.push(path.relative(base, full))
+      }
+    }
+  }
+  walk(base)
+  return found
+}
 
 beforeAll(() => {
-  execSync('node scripts/build-zip.js', { cwd: ROOT, stdio: 'pipe' })
+  fs.rmSync(DIST_DIR, { recursive: true, force: true })
 
-  const zips = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.zip'))
-  expect(zips.length).toBeGreaterThan(0)
-  zipPath = path.join(DIST_DIR, zips[0])
+  for (const gen of GENERATIONS) {
+    execSync(`node scripts/build-zip.js ${gen}`, {
+      cwd: ROOT,
+      stdio: 'pipe',
+      env: { ...process.env, ZIP_OUT_DIR: DIST_DIR }
+    })
 
-  const output = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' })
-  zipEntries = output
-    .split('\n')
-    .filter(line => /\d{4}-\d{2}-\d{2}/.test(line))
-    .map(line => line.trim().split(/\s+/).slice(3).join(' '))
-    .filter(Boolean)
+    const zips = fs.readdirSync(DIST_DIR).filter(f => f.endsWith(`-dwc${gen}.zip`))
+    expect(zips).toHaveLength(1)
+    const zipPath = path.join(DIST_DIR, zips[0])
+
+    const output = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' })
+    const zipEntries = output
+      .split('\n')
+      .filter(line => /\d{4}-\d{2}-\d{2}/.test(line))
+      .map(line => line.trim().split(/\s+/).slice(3).join(' '))
+      .filter(Boolean)
+
+    packages[gen] = { zipPath, zipEntries }
+  }
 })
 
 describe('Plugin manifest validation (DWC 3.6 compatibility)', () => {
@@ -106,12 +146,19 @@ describe('Plugin manifest validation (DWC 3.6 compatibility)', () => {
   })
 })
 
-describe('Plugin ZIP structure', () => {
-  it('produces a ZIP named <PluginId>-<version>.zip', () => {
+describe.each(GENERATIONS)('Plugin ZIP structure (DWC 3.%s)', (gen) => {
+  let zipPath
+  let zipEntries
+
+  beforeAll(() => {
+    ({ zipPath, zipEntries } = packages[gen])
+  })
+
+  it('is named <PluginId>-<version>-dwc<gen>.zip', () => {
     const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'))
     // version.js may append -dev.N so match the prefix + semver pattern
     expect(path.basename(zipPath)).toMatch(
-      new RegExp(`^${pluginJson.id}-\\d+\\.\\d+\\.\\d+(-dev\\.\\d+)?\\.zip$`)
+      new RegExp(`^${pluginJson.id}-\\d+\\.\\d+\\.\\d+(-dev\\.\\d+)?-dwc${gen}\\.zip$`)
     )
   })
 
@@ -139,17 +186,24 @@ describe('Plugin ZIP structure', () => {
     expect(dwcEntries.length).toBeGreaterThan(0)
   })
 
-  it('includes all .vue component files in the ZIP', () => {
-    const expectedVue = ['MeltingplotConfig.vue', 'ConfigStatus.vue', 'ConfigDiff.vue', 'BackupHistory.vue']
-    for (const vue of expectedVue) {
-      const found = zipEntries.some(e => e.endsWith(vue))
-      expect(found).toBe(true)
+  it('contains the shared core', () => {
+    expect(zipEntries).toContain('dwc/src/core/useConfigPage.js')
+    expect(zipEntries).toContain('dwc/src/core/host.js')
+  })
+
+  it('includes every .vue file of this generation', () => {
+    for (const vue of vueFilesOf(gen)) {
+      expect(zipEntries).toContain(`dwc/src/ui${gen}/${vue.split(path.sep).join('/')}`)
     }
   })
 
-  it('includes index.js entry point', () => {
-    const found = zipEntries.some(e => e.endsWith('index.js'))
-    expect(found).toBe(true)
+  it('includes the generated entry point', () => {
+    expect(zipEntries).toContain(`dwc/src/index.${ENTRY_EXT[gen]}`)
+  })
+
+  it('does not carry the other generation\'s UI', () => {
+    const other = GENERATIONS.find(g => g !== gen)
+    expect(zipEntries.filter(e => e.includes(`ui${other}/`))).toEqual([])
   })
 
   it('plugin.json inside ZIP is valid JSON with required fields', () => {
@@ -172,6 +226,7 @@ describe('Plugin ZIP structure', () => {
       e.includes('tests/') ||
       e.includes('.git/') ||
       e.includes('__pycache__/') ||
+      e.endsWith('.pyc') ||
       e.endsWith('.test.js')
     )
     expect(forbidden).toEqual([])
@@ -184,5 +239,9 @@ describe('Plugin ZIP structure', () => {
       e.endsWith('store.js')
     )
     expect(stubs).toEqual([])
+  })
+
+  it('does not contain a package.json, which would make DWC 3.7 npm install our Vue 2 deps', () => {
+    expect(zipEntries.filter(e => e.endsWith('package.json'))).toEqual([])
   })
 })

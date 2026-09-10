@@ -82,8 +82,9 @@ export function displayFiles(backup) {
  *
  * @param {import('vue').Ref<Array<object>>|Function} backupsRef Reactive source
  *   of the backup list (a ref, or a getter returning it)
+ * The return type is left to inference — see the note in `useConfigPage.js`.
+ *
  * @param {(event: string, payload?: *) => void} emit Component emit function
- * @returns {object} Refs and actions to expose from `setup()`
  */
 export function useBackupHistory(backupsRef, emit) {
   const creatingBackup = ref(false)

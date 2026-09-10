@@ -7,8 +7,12 @@ on:
     branches: [main, master]
   workflow_dispatch:
     inputs:
-      duetwebcontrol_ref:
-        description: 'DuetWebControl branch/tag to build against (default: v3.6-dev)'
+      dwc36_ref:
+        description: 'DuetWebControl ref for the 3.6 package (default: v3.6-dev)'
+        required: false
+        default: ''
+      dwc37_ref:
+        description: 'DuetWebControl ref for the 3.7 package (default: v3.7-dev)'
         required: false
         default: ''
 
@@ -56,15 +60,31 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npx jest tests/frontend/*.test.js --verbose
+        run: npx jest tests/frontend/*.test.js tests/frontend/core/ --verbose
 
       - name: Integration tests
         run: npx jest tests/frontend/integration/ --verbose
 
   build:
-    name: Build Plugin ZIP
+    name: Build DWC ${{ matrix.dwc_major }} package
     runs-on: ubuntu-latest
     needs: [python-tests, frontend-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # DWC 3.6: Vue 2.7 / Vuetify 2.7, vue-cli + webpack. Node 18 is proven.
+          - gen: "36"
+            dwc_major: "3.6"
+            default_ref: v3.6-dev
+            node: "18"
+          # DWC 3.7: Vue 3.5 / Vuetify 4, Vite 8 + vue-tsc — needs Node 22+.
+          # The type check runs inside build-plugin-pkg and fails this leg on
+          # template type errors.
+          - gen: "37"
+            dwc_major: "3.7"
+            default_ref: v3.7-dev
+            node: "22"
 
     steps:
       - name: Checkout plugin
@@ -74,17 +94,27 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Resolve DuetWebControl ref
+        id: dwc
+        run: |
+          if [ "${{ matrix.gen }}" = "36" ]; then
+            ref="${{ github.event.inputs.dwc36_ref }}"
+          else
+            ref="${{ github.event.inputs.dwc37_ref }}"
+          fi
+          echo "ref=${ref:-${{ matrix.default_ref }}}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout DuetWebControl
         uses: actions/checkout@v6
         with:
           repository: Duet3D/DuetWebControl
-          ref: ${{ github.event.inputs.duetwebcontrol_ref || 'v3.6-dev' }}
+          ref: ${{ steps.dwc.outputs.ref }}
           path: DuetWebControl
 
-      - name: Set up Node.js
+      - name: Set up Node.js ${{ matrix.node }}
         uses: actions/setup-node@v6
         with:
-          node-version: "18"
+          node-version: ${{ matrix.node }}
 
       - name: Install DWC dependencies
         working-directory: DuetWebControl
@@ -94,21 +124,56 @@ jobs:
         working-directory: plugin
         run: node scripts/version.js --write
 
-      - name: Build plugin
-        working-directory: DuetWebControl
-        run: npm run build-plugin ../plugin
+      - name: Build plugin package
+        working-directory: plugin
+        env:
+          DWC36_DIR: ${{ github.workspace }}/DuetWebControl
+          DWC37_DIR: ${{ github.workspace }}/DuetWebControl
+        run: node scripts/build.js ${{ matrix.gen }}
 
       - name: Verify build output
-        run: ls DuetWebControl/dist/MeltingplotConfig-*.zip
-
-      - name: Extract plugin ZIP for artifact upload
+        working-directory: plugin
+        env:
+          EXPECTED_DWC_VERSION: ${{ matrix.dwc_major }}
+          GEN: ${{ matrix.gen }}
         run: |
-          mkdir -p artifact-content
-          unzip DuetWebControl/dist/MeltingplotConfig-*.zip -d artifact-content
+          zip=$(ls dist/MeltingplotConfig-*-dwc${GEN}.zip)
+          echo "Built $zip"
+          unzip -l "$zip"
+
+          cat > /tmp/verify-manifest.mjs <<'JS'
+          // A green build does not mean the page loads: DWC 3.7 takes the
+          // resource list from manifest.dwcFiles, and an empty list makes it
+          // register the plugin as SBC-only and never load the UI.
+          let raw = "";
+          process.stdin.on("data", (chunk) => { raw += chunk; });
+          process.stdin.on("end", () => {
+            const manifest = JSON.parse(raw);
+            const fail = (message) => { console.error(`::error::${message}`); process.exitCode = 1; };
+            if (manifest.dwcVersion !== process.env.EXPECTED_DWC_VERSION) {
+              fail(`dwcVersion is ${manifest.dwcVersion}, expected ${process.env.EXPECTED_DWC_VERSION}`);
+            }
+            if (!(manifest.dwcFiles || []).some((file) => file.endsWith(".js"))) {
+              fail("dwcFiles carries no JS resource — DWC would treat this as an SBC-only plugin");
+            }
+            if (!(manifest.dsfFiles || []).includes("meltingplot-config-daemon.py")) {
+              fail("dsfFiles is missing the daemon");
+            }
+            console.log(`dwcVersion=${manifest.dwcVersion}`);
+            console.log(`dwcFiles=${(manifest.dwcFiles || []).join(", ")}`);
+            console.log(`dsfFiles=${(manifest.dsfFiles || []).join(", ")}`);
+          });
+          JS
+          unzip -p "$zip" plugin.json | node /tmp/verify-manifest.mjs
+
+          unzip -l "$zip" | grep -qE 'dwc/js/MeltingplotConfig.*\.js' \
+            || { echo "::error::No compiled JS bundle in the package"; exit 1; }
+          unzip -l "$zip" | grep -q 'dsf/meltingplot-config-daemon.py' \
+            || { echo "::error::The Python backend is missing from the package"; exit 1; }
 
       - name: Upload plugin ZIP
         uses: actions/upload-artifact@v7
         with:
-          name: MeltingplotConfig-plugin
-          path: artifact-content/*
+          name: MeltingplotConfig-plugin-dwc${{ matrix.gen }}
+          path: plugin/dist/MeltingplotConfig-*-dwc${{ matrix.gen }}.zip
           retention-days: 30

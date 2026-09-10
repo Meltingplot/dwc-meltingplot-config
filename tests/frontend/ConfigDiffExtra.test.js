@@ -1,5 +1,5 @@
 import { shallowMount } from '@vue/test-utils';
-import ConfigDiff from '../../src/components/ConfigDiff.vue';
+import ConfigDiff from '../../src/ui36/components/ConfigDiff.vue';
 
 function mountComponent(propsData = {}) {
     return shallowMount(ConfigDiff, {

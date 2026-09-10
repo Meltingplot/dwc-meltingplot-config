@@ -4,7 +4,7 @@ import {
     startBackend,
     ensureBackendRunning
 } from '../../../src/core/backend'
-import { createHost } from '../../../src/host'
+import { createHost } from '../../../src/ui36/host'
 
 function modelWithMap(plugin) {
     const plugins = new Map()

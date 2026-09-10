@@ -218,5 +218,8 @@ yarn-error.log*
 dist/
 *.zip
 
+# Staged plugin trees written by scripts/stage.js
+.build/
+
 # Local CI runner workspace
 .ci-local/

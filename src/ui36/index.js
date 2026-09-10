@@ -4,7 +4,7 @@ import { registerRoute } from '@/routes'
 import store from '@/store'
 import MeltingplotConfig from './MeltingplotConfig.vue'
 import { createHost } from './host'
-import { ensureBackendRunning } from './core/backend'
+import { ensureBackendRunning } from '../core/backend'
 
 registerRoute(MeltingplotConfig, {
     Plugins: {

@@ -18,15 +18,17 @@
 /** Identifier of this plugin as registered with DSF and DWC. */
 export const PLUGIN_ID = 'MeltingplotConfig'
 
-/** Shape of this plugin's custom data, with the defaults from plugin.json. */
-const PLUGIN_DATA_DEFAULTS = {
-  referenceRepoUrl: '',
-  firmwareBranchOverride: '',
-  detectedFirmwareVersion: '',
-  activeBranch: '',
-  lastSyncTimestamp: '',
-  status: 'not_configured'
-}
+/**
+ * This plugin's custom data, as declared in the `data` section of plugin.json.
+ *
+ * @typedef {object} PluginData
+ * @property {string} referenceRepoUrl Git URL of the reference config repo
+ * @property {string} firmwareBranchOverride Branch to use instead of auto-detection
+ * @property {string} detectedFirmwareVersion Firmware version read from the object model
+ * @property {string} activeBranch Branch the reference repo is checked out at
+ * @property {string} lastSyncTimestamp When the reference repo was last fetched
+ * @property {string} status Sync status, see `core/status.js`
+ */
 
 /**
  * Read this plugin's entry from the machine object model.
@@ -53,10 +55,11 @@ export function pluginEntry(model) {
  * on DWC 3.6, whose Vuex module keeps a JSON clone. This is the only place
  * that is allowed to index it — see the landmine list in the dual-build plan.
  *
+ * @template T
  * @param {object|null} plugin Plugin object from the object model
  * @param {string} key Data key
- * @param {*} [fallback] Value to return when the key is absent or empty
- * @returns {*} The stored value, or `fallback`
+ * @param {T} fallback Value to return when the key is absent or empty
+ * @returns {T} The stored value, or `fallback`
  */
 export function pluginDataValue(plugin, key, fallback) {
   const data = plugin && plugin.data
@@ -70,16 +73,22 @@ export function pluginDataValue(plugin, key, fallback) {
 /**
  * This plugin's custom data, normalised to a plain object with all keys set.
  *
+ * Written out key by key rather than looped over a defaults map so the DWC 3.7
+ * templates get a real type for it out of vue-tsc.
+ *
  * @param {object} model Machine object model
- * @returns {object} One property per key of `PLUGIN_DATA_DEFAULTS`
+ * @returns {PluginData} Every key, with the plugin.json default where unset
  */
 export function readPluginData(model) {
   const plugin = pluginEntry(model)
-  const result = {}
-  for (const [key, fallback] of Object.entries(PLUGIN_DATA_DEFAULTS)) {
-    result[key] = pluginDataValue(plugin, key, fallback)
+  return {
+    referenceRepoUrl: pluginDataValue(plugin, 'referenceRepoUrl', ''),
+    firmwareBranchOverride: pluginDataValue(plugin, 'firmwareBranchOverride', ''),
+    detectedFirmwareVersion: pluginDataValue(plugin, 'detectedFirmwareVersion', ''),
+    activeBranch: pluginDataValue(plugin, 'activeBranch', ''),
+    lastSyncTimestamp: pluginDataValue(plugin, 'lastSyncTimestamp', ''),
+    status: pluginDataValue(plugin, 'status', 'not_configured')
   }
-  return result
 }
 
 /**

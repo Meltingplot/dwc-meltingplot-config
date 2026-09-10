@@ -236,7 +236,7 @@
 'use strict'
 
 import { toRef } from 'vue'
-import { useBackupHistory } from '../core/useBackupHistory'
+import { useBackupHistory } from '../../core/useBackupHistory'
 
 export default {
   name: 'BackupHistory',

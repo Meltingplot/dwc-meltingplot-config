@@ -18,39 +18,86 @@ from dsf.connections import CommandConnection
 from dsf.http import HttpEndpointConnection, HttpResponseType
 from dsf.object_model import HttpEndpointType
 
-# Monkey-patch dsf-python: PluginManifest._data is a plain dict which
-# _update_from_json silently skips.  Replace it with ModelDictionary(False)
-# so deserialization populates plugin.data correctly.
-# See: https://github.com/Duet3D/dsf-python/issues/XXX
-try:
-    from dsf.object_model.plugins.plugin_manifest import PluginManifest as _PM
-    from dsf.object_model.model_dictionary import ModelDictionary as _MD
-
-    _original_pm_init = _PM.__init__
-
-    def _patched_pm_init(self):
-        _original_pm_init(self)
-        self._data = _MD(False)
-
-    _PM.__init__ = _patched_pm_init
-except ImportError:
-    pass  # dsf not installed (e.g. test environment)
-
-# Monkey-patch dsf-python: BoardState enum is missing values that DSF may
-# report (e.g. "timedOut" when an expansion board doesn't respond).  The
-# Board.state setter calls BoardState(value) which raises ValueError for
-# unrecognised values, crashing get_object_model() entirely.
+# --- dsf-python workarounds -------------------------------------------------
 #
-# Fix: replace the entire BoardState enum with one that includes the missing
-# members, and patch the Board.state setter as a safety net for any future
-# unknown values.
-try:
-    import dsf.object_model.boards.boards as _boards_mod
-    from dsf.object_model.boards.boards import Board as _Board
+# These paper over bugs in the dsf-python library itself. Each one is applied
+# through _apply_dsf_workaround so that a library that has moved on cannot take
+# the daemon down at import time: a workaround that no longer fits is reported
+# and skipped, not raised.
+#
+# Verified against dsf-python v3.6-dev and v3.7-dev. The module paths, the
+# PluginManifest constructor and the Board/NetworkInterface property objects all
+# survive in 3.7, so every patch below still applies there. What changed is how
+# much of each one is still doing work — noted per patch.
+
+
+def _apply_dsf_workaround(name, patch):
+    """Apply one dsf-python workaround, tolerating a library that moved on.
+
+    :param name: Short identifier used in the warning
+    :param patch: Callable performing the patch
+    """
+    try:
+        patch()
+    except ImportError:
+        pass  # dsf not installed (e.g. test environment)
+    except Exception as exc:  # noqa: BLE001 - never let a workaround be fatal
+        print(
+            f"[MeltingplotConfig] dsf-python workaround '{name}' did not apply: "
+            f"{exc.__class__.__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def _patch_plugin_manifest_data():
+    """PluginManifest._data is a plain dict that _update_from_json skips.
+
+    dsf-python 3.6 initialises `_data` as `{}`, and `_update_from_json` only
+    handles ModelObject, ModelCollection, ModelDictionary and list — plain
+    dicts are silently ignored, so `plugin.data` stays empty forever.
+
+    Replacing it with a ModelDictionary makes deserialization populate it.
+
+    dsf-python 3.7 fixed this (`data = model_prop('data', ModelDictionary, ...)`),
+    where `_data` is that property's storage. Assigning a fresh empty
+    ModelDictionary there is exactly what the property's own default does, so
+    this is redundant but harmless on 3.7.
+    """
+    from dsf.object_model.model_dictionary import ModelDictionary
+    from dsf.object_model.plugins.plugin_manifest import PluginManifest
+
+    original_init = PluginManifest.__init__
+
+    def patched_init(self):
+        original_init(self)
+        self._data = ModelDictionary(False)
+
+    PluginManifest.__init__ = patched_init
+
+
+def _patch_board_state():
+    """BoardState is missing values DSF reports, e.g. "timedOut".
+
+    The Board.state setter coerces through BoardState(value), which raises
+    ValueError for anything unlisted — and that crashes get_object_model()
+    entirely, losing firmware detection and the directory mapping.
+
+    Still missing in dsf-python 3.7, so this patch is load-bearing on both.
+
+    Two parts: replace the enum, and replace the setter. On 3.6 the setter
+    reads the module-level name, so swapping the enum is what fixes it; on 3.7
+    the property captured the enum at class-definition time and ignores the
+    swap, so there the replaced setter is what does the work. Keeping both
+    covers either library.
+    """
     from enum import Enum
 
-    class _PatchedBoardState(str, Enum):
+    import dsf.object_model.boards.boards as boards_module
+    from dsf.object_model.boards.boards import Board
+
+    class PatchedBoardState(str, Enum):
         """Replacement BoardState that includes all known DSF states."""
+
         unknown = "unknown"
         flashing = "flashing"
         flashFailed = "flashFailed"
@@ -58,69 +105,75 @@ try:
         running = "running"
         timedOut = "timedOut"
 
-    # Replace the enum in the module so Board.state setter picks it up.
-    _boards_mod.BoardState = _PatchedBoardState
+    boards_module.BoardState = PatchedBoardState
 
-    # Re-wire the Board.state setter to use the new enum, with a safety net
-    # for any future unknown values.
-    def _safe_state_setter(self, value):
+    def safe_state_setter(self, value):
         try:
-            if value is None or isinstance(value, _PatchedBoardState):
+            if value is None or isinstance(value, PatchedBoardState):
                 self._state = value
             elif isinstance(value, str):
-                self._state = _PatchedBoardState(value)
+                self._state = PatchedBoardState(value)
             else:
                 raise TypeError(f"invalid type for Board.state: {type(value)}")
         except (ValueError, KeyError):
-            self._state = _PatchedBoardState.unknown
+            self._state = PatchedBoardState.unknown
 
-    _Board.state = _Board.state.setter(_safe_state_setter)
-except ImportError:
-    pass  # dsf not installed (e.g. test environment)
+    Board.state = Board.state.setter(safe_state_setter)
 
-# Monkey-patch dsf-python: NetworkInterfaceType enum only defines "lan" and
-# "wifi", but DSF 3.6.3-rc.1 reports "ethernet" for wired interfaces.  The
-# NetworkInterface.type setter calls NetworkInterfaceType(value) which raises
-# ValueError for unrecognised values, crashing get_object_model() entirely.
-#
-# Fix: replace the entire NetworkInterfaceType enum with one that includes
-# "ethernet" and an "unknown" fallback, and patch the NetworkInterface.type
-# setter as a safety net for any future unknown values.
-try:
-    import dsf.object_model.network.network_interface_type as _nit_mod
-    import dsf.object_model.network.network_interface as _ni_mod
-    from dsf.object_model.network.network_interface import NetworkInterface as _NI
+
+def _patch_network_interface_type():
+    """NetworkInterfaceType is missing values DSF reports.
+
+    dsf-python 3.6 defines only "lan" and "wifi", while DSF 3.6.3-rc.1 reports
+    "ethernet" for wired interfaces — and the setter's coercion raises
+    ValueError, crashing get_object_model().
+
+    dsf-python 3.7 added "ethernet" but dropped "lan", so the same class of
+    crash just moved to the other value. The replacement enum below carries
+    "lan", "wifi", "ethernet" and an "unknown" fallback, which covers both.
+
+    Same two parts, for the same reason, as the BoardState patch.
+    """
     from enum import Enum
 
-    class _PatchedNetworkInterfaceType(str, Enum):
-        """Replacement NetworkInterfaceType including ethernet + unknown."""
+    import dsf.object_model.network.network_interface as ni_module
+    import dsf.object_model.network.network_interface_type as nit_module
+    from dsf.object_model.network.network_interface import NetworkInterface
+
+    class PatchedNetworkInterfaceType(str, Enum):
+        """Replacement NetworkInterfaceType covering 3.6 and 3.7 values."""
+
         unknown = "unknown"
         lan = "lan"
         wifi = "wifi"
         ethernet = "ethernet"
 
-    # Replace the enum in both modules so the setter picks it up.
-    _nit_mod.NetworkInterfaceType = _PatchedNetworkInterfaceType
-    _ni_mod.NetworkInterfaceType = _PatchedNetworkInterfaceType
+    nit_module.NetworkInterfaceType = PatchedNetworkInterfaceType
+    ni_module.NetworkInterfaceType = PatchedNetworkInterfaceType
 
-    def _safe_ni_type_setter(self, value):
+    def safe_type_setter(self, value):
         try:
             if value is None or value == "":
-                self._type = _PatchedNetworkInterfaceType.wifi
-            elif isinstance(value, _PatchedNetworkInterfaceType):
+                self._type = PatchedNetworkInterfaceType.wifi
+            elif isinstance(value, PatchedNetworkInterfaceType):
                 self._type = value
             elif isinstance(value, str):
-                self._type = _PatchedNetworkInterfaceType(value)
+                self._type = PatchedNetworkInterfaceType(value)
             else:
                 raise TypeError(
                     f"invalid type for NetworkInterface.type: {type(value)}"
                 )
         except (ValueError, KeyError):
-            self._type = _PatchedNetworkInterfaceType.unknown
+            self._type = PatchedNetworkInterfaceType.unknown
 
-    _NI.type = _NI.type.setter(_safe_ni_type_setter)
-except ImportError:
-    pass  # dsf not installed (e.g. test environment)
+    NetworkInterface.type = NetworkInterface.type.setter(safe_type_setter)
+
+
+_apply_dsf_workaround("PluginManifest.data", _patch_plugin_manifest_data)
+_apply_dsf_workaround("BoardState", _patch_board_state)
+_apply_dsf_workaround("NetworkInterfaceType", _patch_network_interface_type)
+
+# --- end dsf-python workarounds ---------------------------------------------
 
 from config_manager import ConfigManager, DATA_DIR
 

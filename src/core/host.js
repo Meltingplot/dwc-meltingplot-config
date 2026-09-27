@@ -13,6 +13,8 @@
  *   reactive state on every call so computed properties track it.
  * @property {(id: string) => Promise<void>} startSbcPlugin Ask DSF to start
  *   the SBC part of a plugin.
+ * @property {() => (string|null)} sessionKey Key of DWC's current DSF session,
+ *   or null while there is none. Read per request: a reconnect replaces it.
  */
 
 /** Identifier of this plugin as registered with DSF and DWC. */

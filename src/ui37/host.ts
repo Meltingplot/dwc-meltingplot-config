@@ -22,6 +22,12 @@ export function createHost(): Host {
 		async startSbcPlugin(id: string) {
 			await useMachineStore().startSbcPlugin(id);
 		},
+		sessionKey() {
+			// RestConnector keeps the key from /machine/connect in a field its
+			// typings mark private; there is no public accessor for it.
+			const connector = useMachineStore().connector as unknown as { sessionKey?: string | null } | null;
+			return connector?.sessionKey ?? null;
+		},
 	};
 }
 

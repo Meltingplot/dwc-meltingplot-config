@@ -9,12 +9,19 @@
 import { registerRoute, unregisterRoute } from "@/plugins";
 import Events from "@/utils/events";
 
+import { setApiHost } from "../core/api";
 import { ensureBackendRunning } from "../core/backend";
 import MeltingplotConfig from "./MeltingplotConfig.vue";
 import { PLUGIN_ID, createHost } from "./host";
 
 /** Kept identical to the DWC 3.6 route so bookmarks and docs stay valid. */
 const ROUTE_PATH = "/MeltingplotConfig";
+
+const host = createHost();
+
+// Our endpoints reject requests without a DSF session, so every one of them
+// has to carry DWC's.
+setApiHost(host);
 
 registerRoute(MeltingplotConfig, {
 	Plugins: {
@@ -30,7 +37,7 @@ registerRoute(MeltingplotConfig, {
 // Upgrading a plugin makes DSF stop the old SBC process without starting the
 // new one, which leaves the plugin "partially started" and all of its HTTP
 // endpoints unreachable. Recover from that as soon as DWC loads our resources.
-void ensureBackendRunning(createHost());
+void ensureBackendRunning(host);
 
 // DWC 3.7 can unload a plugin at runtime; drop the route with it so a reload
 // does not stack a second drawer entry.

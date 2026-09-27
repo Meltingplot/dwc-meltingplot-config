@@ -1,4 +1,4 @@
-import { API_BASE, apiBlob, apiGet, apiPost, downloadBlob, extractErrorMessage, query } from '../../../src/core/api'
+import { API_BASE, apiBlob, apiGet, apiPost, downloadBlob, extractErrorMessage, query, setApiHost } from '../../../src/core/api'
 
 function okResponse(data) {
     return {
@@ -11,6 +11,7 @@ function okResponse(data) {
 
 afterEach(() => {
     delete global.fetch
+    setApiHost(null)
 })
 
 describe('core/api', () => {
@@ -39,7 +40,7 @@ describe('core/api', () => {
         it('prefixes the path and parses JSON', async () => {
             global.fetch = jest.fn(() => Promise.resolve(okResponse({ status: 'ok' })))
             await expect(apiGet('/status')).resolves.toEqual({ status: 'ok' })
-            expect(global.fetch).toHaveBeenCalledWith('/machine/MeltingplotConfig/status')
+            expect(global.fetch).toHaveBeenCalledWith('/machine/MeltingplotConfig/status', {})
         })
 
         it('rejects with the daemon error message', async () => {
@@ -87,6 +88,52 @@ describe('core/api', () => {
         it('rejects on a failed response', async () => {
             global.fetch = jest.fn(() => Promise.resolve({ ok: false, statusText: 'Not Found' }))
             await expect(apiBlob('/backupDownload?hash=abc')).rejects.toThrow('Not Found')
+        })
+    })
+
+    describe('session', () => {
+        function hostWithKey(key) {
+            return { model: () => null, startSbcPlugin: () => Promise.resolve(), sessionKey: () => key }
+        }
+
+        it('sends DWC\'s session key with every request', async () => {
+            setApiHost(hostWithKey('abc123'))
+            global.fetch = jest.fn(() => Promise.resolve(okResponse({})))
+
+            await apiGet('/status')
+            await apiPost('/sync')
+            await apiBlob('/backupDownload?hash=abc')
+
+            for (const [, options] of global.fetch.mock.calls) {
+                expect(options.headers['X-Session-Key']).toBe('abc123')
+            }
+            expect(global.fetch.mock.calls[1][1].method).toBe('POST')
+        })
+
+        it('keeps the JSON content type next to the session key', async () => {
+            setApiHost(hostWithKey('abc123'))
+            global.fetch = jest.fn(() => Promise.resolve(okResponse({})))
+            await apiPost('/applyHunks?file=a', { hunks: [0] })
+            const [, options] = global.fetch.mock.calls[0]
+            expect(options.headers).toEqual({ 'Content-Type': 'application/json', 'X-Session-Key': 'abc123' })
+            expect(JSON.parse(options.body)).toEqual({ hunks: [0] })
+        })
+
+        it('reads the key per request, so a reconnect\'s new key is picked up', async () => {
+            let key = 'first'
+            setApiHost({ ...hostWithKey(null), sessionKey: () => key })
+            global.fetch = jest.fn(() => Promise.resolve(okResponse({})))
+            await apiGet('/status')
+            key = 'second'
+            await apiGet('/status')
+            expect(global.fetch.mock.calls.map(([, o]) => o.headers['X-Session-Key'])).toEqual(['first', 'second'])
+        })
+
+        it('sends no header while there is no session', async () => {
+            setApiHost(hostWithKey(null))
+            global.fetch = jest.fn(() => Promise.resolve(okResponse({})))
+            await apiGet('/status')
+            expect(global.fetch).toHaveBeenCalledWith('/machine/MeltingplotConfig/status', {})
         })
     })
 

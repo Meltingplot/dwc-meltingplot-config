@@ -611,10 +611,33 @@ ENDPOINTS = {
 # --- Async handler factory ---
 
 
+def has_session(request):
+    """Whether the request carries the key of a live DSF session.
+
+    DuetWebServer forwards requests to third-party endpoints whether or not they
+    are authenticated: it looks up the X-Session-Key header and passes the
+    matching session ID on, or -1 when the header is missing or names no
+    session. Enforcing that is left to the plugin. Valid IDs are positive —
+    DuetWebServer only stores sessions whose ID is above zero.
+
+    :param request: dsf-python ReceivedHttpRequest
+    :returns: True if DSF resolved the request to a session
+    """
+    session_id = getattr(request, "session_id", -1)
+    return isinstance(session_id, int) and session_id > 0
+
+
 def _make_async_handler(cmd, manager, handler_func):
     """Create an async HTTP handler for a dsf-python endpoint."""
     async def _handler(http_conn):
         request = await http_conn.read_request()
+        if not has_session(request):
+            await http_conn.send_response(
+                401,
+                json.dumps({"error": "A valid DWC session is required (X-Session-Key header)"}),
+                HttpResponseType.JSON,
+            )
+            return
         try:
             queries = getattr(request, "queries", {}) or {}
             body = getattr(request, "body", "") or ""

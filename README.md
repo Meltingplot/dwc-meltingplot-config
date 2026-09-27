@@ -190,11 +190,19 @@ never overwritten by a reference update. They are hidden from the diff view and
 reported as `skipped` by *Apply all*:
 
 - `sys/config-override.g` — RepRapFirmware's own `M500` output
-- `sys/meltingplot/machine-override`
-- `sys/meltingplot/dsf-config-override.g`
-- `sys/meltingplot/global-override.g`
+- `sys/overrides/*` — everything the operator edits (`global-override.g`,
+  `machine-override`, `dsf-config-override.g`, `printer-name.g`, …)
+- `sys/generated/*` — everything the machine writes about itself (nozzle, spool,
+  filament diameter, bed surface, …); the reference never ships these
+- `sys/meltingplot/{machine-override,dsf-config-override.g,global-override.g}` —
+  the same override files in their pre-3.7 location (3.6 branch)
 - `filaments/<profile>/config-override.g` — per-material tuning (pressure advance, retract, …)
 - `filaments/<profile>/temps.g` — per-material temperatures
+- `filaments/<profile>/material.g` — density and spool variants
+- `filaments/<profile>/nozzle-<key>.g` — nozzle-specific values
+
+The two `sys/` directories are matched as a whole, so a new machine-owned file in
+the reference needs no entry here.
 
 A filament profile's `config.g`, `load.g` and `unload.g` stay updatable — they are
 machine-generated on the printer, not hand-edited.

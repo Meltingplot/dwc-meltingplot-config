@@ -383,7 +383,7 @@ with 3.7's toolchain the day Duet3D tags `v3.7.0`.
 | Persistent data location | `/opt/dsf/sd/MeltingplotConfig/` — survives plugin upgrades (DSF wipes `PLUGIN_DIR`) |
 | Backup strategy | Worktree-based git repo — tracks sys/, macros/, filaments/ in-place |
 | Partial apply | File- and hunk-level deselection — *Apply All* becomes *Partially Apply* and skips what the user unchecked (`POST /applySelection`) |
-| Protected files | Overrides (`config-override.g`, `temps.g`, `machine-override`, `global-override.g`) are never overwritten **once they exist on the printer**; a missing one is seeded from the reference (`ConfigManager._is_overwrite_protected`) |
+| Protected files | Everything in `sys/overrides/` and `sys/generated/`, the pre-3.7 `sys/meltingplot/*-override*` files and the per-profile `config-override.g`, `temps.g`, `material.g`, `nozzle-*.g` are never overwritten **once they exist on the printer**; a missing one is seeded from the reference (`ConfigManager._is_overwrite_protected`) |
 
 ## HTTP API
 

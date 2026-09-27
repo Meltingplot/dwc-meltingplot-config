@@ -50,23 +50,40 @@ BACKUP_INCLUDED_DIRS = ("sys/", "macros/", "filaments/")
 # ``ConfigManager._is_overwrite_protected``).
 # Matched by exact ref_path.
 PROTECTED_FILES = (
+    # RepRapFirmware's own override file — written by M500, holds the
+    # machine's saved parameters. Its location is fixed by the firmware.
+    "sys/config-override.g",
+    # Pre-3.7 layout of the chx350-config: the override files lived next to
+    # the system macros. Kept for the 3.6 branch; from 3.7 on they sit in
+    # sys/overrides/ (see PROTECTED_PATTERNS).
     "sys/meltingplot/machine-override",
     "sys/meltingplot/dsf-config-override.g",
     "sys/meltingplot/global-override.g",
-    # RepRapFirmware's own override file — written by M500, holds the
-    # machine's saved parameters.
-    "sys/config-override.g",
 )
 
 # Additional protected files matched by pattern rather than exact path.
-# Each filament profile carries two user-editable files: config-override.g
-# (pressure advance, retract, …) and temps.g (per-material temperatures).
-# Both hold machine- and material-specific tuning and are protected just
-# like the other override files. The profile's config.g, load.g and
-# unload.g are machine-generated and stay updatable.
+#
+# From chx350-config 3.7 on, everything machine-owned lives in two
+# directories, so a new machine-owned file needs no entry here:
+#   sys/overrides/   files the operator edits (global-override.g,
+#                    machine-override, dsf-config-override.g, printer-name.g)
+#   sys/generated/   files the machine writes about itself (nozzle, spool,
+#                    filament diameter, bed surface, …); never shipped by
+#                    the reference, so they are only ever listed for
+#                    completeness
+# The filament profiles keep their per-file rules, because their layout is
+# dictated by RepRapFirmware: config-override.g (pressure advance, retract, …),
+# temps.g (per-material temperatures), material.g (density, spool variants) and
+# nozzle-<key>.g (nozzle-specific values) are user-editable, while the
+# profile's config.g, load.g and unload.g are machine-generated boilerplate
+# and stay updatable.
 PROTECTED_PATTERNS = (
+    re.compile(r"^sys/overrides/[^/]+$"),
+    re.compile(r"^sys/generated/[^/]+$"),
     re.compile(r"^filaments/[^/]+/config-override\.g$"),
     re.compile(r"^filaments/[^/]+/temps\.g$"),
+    re.compile(r"^filaments/[^/]+/material\.g$"),
+    re.compile(r"^filaments/[^/]+/nozzle-[^/]+\.g$"),
 )
 
 # Default directory mapping (fallback when DSF object model is unavailable).

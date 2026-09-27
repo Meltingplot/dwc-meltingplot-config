@@ -11,6 +11,8 @@ export const PLUGIN_ID = "MeltingplotConfig";
 
 const store = reactive({
   model: { plugins: new Map() },
+  // The RestConnector; its session key is a field the typings mark private
+  connector: null,
   startSbcPlugin: vi.fn().mockResolvedValue(undefined),
 });
 
@@ -35,5 +37,6 @@ export function setPlugin({ pid, data } = {}) {
 /** Reset the store between test cases. */
 export function resetMachineStore() {
   store.model = { plugins: new Map() };
+  store.connector = null;
   store.startSbcPlugin = vi.fn().mockResolvedValue(undefined);
 }

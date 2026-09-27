@@ -818,7 +818,8 @@ describe('MeltingplotConfig', () => {
             await wrapper.vm.downloadBackup('abc123def456');
 
             expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/backupDownload?hash=abc123def456')
+                expect.stringContaining('/backupDownload?hash=abc123def456'),
+                expect.anything()
             );
             expect(clickSpy).toHaveBeenCalled();
             expect(URL.revokeObjectURL).toHaveBeenCalledWith(mockUrl);

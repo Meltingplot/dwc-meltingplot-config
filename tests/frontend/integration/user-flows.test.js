@@ -372,7 +372,8 @@ describe('User flow: Backup and restore', () => {
     await wrapper.vm.downloadBackup('abc123')
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/backupDownload?hash=abc123')
+      expect.stringContaining('/backupDownload?hash=abc123'),
+      expect.anything()
     )
     expect(clickSpy).toHaveBeenCalled()
 

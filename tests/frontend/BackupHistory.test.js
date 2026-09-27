@@ -244,7 +244,8 @@ describe('BackupHistory', () => {
       expect(backup.fileDiff).toBeTruthy()
       expect(backup.fileDiff.status).toBe('modified')
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('backupFileDiff')
+        expect.stringContaining('backupFileDiff'),
+        expect.anything()
       )
 
       global.fetch.mockRestore()
@@ -295,7 +296,8 @@ describe('BackupHistory', () => {
       expect(backup.fileContent).toBeTruthy()
       expect(backup.fileContent.content).toBe('G28\nM584 X0 Y1\n')
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('backupFileContent')
+        expect.stringContaining('backupFileContent'),
+        expect.anything()
       )
 
       global.fetch.mockRestore()
@@ -325,7 +327,8 @@ describe('BackupHistory', () => {
       await wrapper.vm.onFileSelected(backup, ['sys/config.g'])
       expect(backup.viewMode).toBe('diff')
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('backupFileDiff')
+        expect.stringContaining('backupFileDiff'),
+        expect.anything()
       )
 
       global.fetch.mockRestore()
@@ -429,7 +432,8 @@ describe('BackupHistory', () => {
       expect(backup.viewMode).toBe('content')
       expect(backup.fileContent).toBeTruthy()
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('backupFileContent')
+        expect.stringContaining('backupFileContent'),
+        expect.anything()
       )
 
       global.fetch.mockRestore()
@@ -459,7 +463,8 @@ describe('BackupHistory', () => {
       expect(backup.viewMode).toBe('diff')
       expect(backup.fileDiff).toBeTruthy()
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('backupFileDiff')
+        expect.stringContaining('backupFileDiff'),
+        expect.anything()
       )
 
       global.fetch.mockRestore()

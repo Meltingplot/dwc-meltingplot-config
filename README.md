@@ -222,6 +222,16 @@ Unchecking every hunk in a file is the same as unchecking the file. Files marked
 
 All endpoints are under `/machine/MeltingplotConfig/`. Dynamic parameters use query strings (DSF uses exact path matching, no path parameters).
 
+Every endpoint requires an active DSF session: send the key that `/machine/connect` returns
+in an `X-Session-Key` header. Requests without one are answered `401`. DSF forwards plugin
+requests whether or not they are authenticated, so the daemon enforces this itself. The
+plugin UI sends DWC's own session key. For scripts:
+
+```bash
+KEY=$(curl -s "http://printer/machine/connect?password=<password>" | jq -r .sessionKey)
+curl -H "X-Session-Key: $KEY" http://printer/machine/MeltingplotConfig/status
+```
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/machine/MeltingplotConfig/status` | Sync status, FW version, active branch, last sync time |

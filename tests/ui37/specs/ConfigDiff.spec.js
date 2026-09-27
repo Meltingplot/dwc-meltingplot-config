@@ -124,7 +124,8 @@ describe("ui37 ConfigDiff", () => {
     await flush(wrapper);
 
     expect(fetchStub).toHaveBeenCalledWith(
-      "/machine/MeltingplotConfig/diff?file=sys%2Fconfig.g"
+      "/machine/MeltingplotConfig/diff?file=sys%2Fconfig.g",
+      expect.anything()
     );
     expect(files[0].hunks).toHaveLength(1);
     expect(files[0].hunks[0].lines).toEqual(["-a", "+b"]);

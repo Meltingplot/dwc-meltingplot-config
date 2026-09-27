@@ -84,4 +84,18 @@ describe("ui37 entry point", () => {
     expect(unregisterRoute).not.toHaveBeenCalled();
     expect(Events.handlerCount("dwcPluginUnloaded")).toBe(1);
   });
+
+  it("authenticates API requests with the connector's session key", async () => {
+    const { useMachineStore } = await loadEntry();
+    // The same module instance the entry point configured
+    const { apiGet } = await import("../../../src/core/api.js");
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
+
+    useMachineStore().connector = { sessionKey: "k37" };
+    await apiGet("/status");
+
+    const [url, options] = globalThis.fetch.mock.calls[0];
+    expect(url).toBe("/machine/MeltingplotConfig/status");
+    expect(options.headers["X-Session-Key"]).toBe("k37");
+  });
 });

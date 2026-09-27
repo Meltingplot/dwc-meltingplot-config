@@ -121,6 +121,20 @@ describe('ui36 Vuex host adapter', () => {
         expect(dispatch).toHaveBeenCalledWith('machine/startSbcPlugin', PLUGIN_ID)
     })
 
+    it('reads the session key off the machine module\'s connector', () => {
+        const getters = { 'machine/connector': { sessionKey: 'abc123' } }
+        expect(createHost({ state: {}, getters }).sessionKey()).toBe('abc123')
+    })
+
+    it('has no session key without a connector', () => {
+        // DWC's default machine module, before a connection is made
+        expect(createHost({ state: {}, getters: { 'machine/connector': null } }).sessionKey()).toBeNull()
+        // A connector that never obtained one (pre-3.4 DSF, or standalone mode)
+        expect(createHost({ state: {}, getters: { 'machine/connector': { sessionKey: null } } }).sessionKey()).toBeNull()
+        expect(createHost({ state: {} }).sessionKey()).toBeNull()
+        expect(createHost(undefined).sessionKey()).toBeNull()
+    })
+
     it('drives ensureBackendRunning end to end', async () => {
         const dispatch = jest.fn().mockResolvedValue(undefined)
         const store = { state: { machine: { model: modelWithMap({ pid: -1 }) } }, dispatch }

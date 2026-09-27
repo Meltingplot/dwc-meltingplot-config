@@ -19,6 +19,12 @@ export function createHost(store) {
     },
     startSbcPlugin(id) {
       return Promise.resolve(store.dispatch('machine/startSbcPlugin', id))
+    },
+    sessionKey() {
+      // RestConnector keeps the key from /machine/connect in a field its
+      // typings mark private; there is no public accessor for it.
+      const connector = store && store.getters && store.getters['machine/connector']
+      return (connector && connector.sessionKey) || null
     }
   }
 }

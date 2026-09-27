@@ -45,7 +45,7 @@ describe("ui37 MeltingplotConfig", () => {
     wrapper = mountWithVuetify(MeltingplotConfig);
     await flush(wrapper);
 
-    expect(fetchStub).toHaveBeenCalledWith("/machine/MeltingplotConfig/status");
+    expect(fetchStub).toHaveBeenCalledWith("/machine/MeltingplotConfig/status", expect.anything());
   });
 
   it("shows the backend banner only while the daemon is stopped", async () => {

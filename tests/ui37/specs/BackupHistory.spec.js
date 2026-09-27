@@ -73,7 +73,8 @@ describe("ui37 BackupHistory", () => {
     await flush(wrapper);
 
     expect(fetchStub).toHaveBeenCalledWith(
-      "/machine/MeltingplotConfig/backup?hash=abcdef1234567890"
+      "/machine/MeltingplotConfig/backup?hash=abcdef1234567890",
+      expect.anything()
     );
     expect(backups[0].expanded).toBe(true);
     expect(backups[0].changedFiles).toEqual(["sys/config.g"]);

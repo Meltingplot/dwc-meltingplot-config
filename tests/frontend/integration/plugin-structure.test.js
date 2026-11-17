@@ -252,10 +252,22 @@ describe('Staged manifest pins dsf-python per generation', () => {
   const { stagedManifest } = require('../../../scripts/stage')
 
   it.each([
-    ['36', 'dsf-python>=3.6.0,<3.7'],
-    ['37', 'dsf-python>=3.7.0,<3.8']
+    ['36', 'dsf-python<3.7'],
+    ['37', 'dsf-python<3.8']
   ])('DWC 3.%s package', (gen, expected) => {
     const deps = stagedManifest(gen).sbcPythonDependencies
     expect(deps.filter(dep => dep.startsWith('dsf-python'))).toEqual([expected])
+  })
+
+  // DSF installs these with /opt/dsf/bin/pipInstall2.py (DSF v3.6.4 and
+  // v3.7-dev alike), which rejects a comma with exit code 5 and accepts only
+  // entries matching this regex — copied verbatim from that script.
+  const PIP_INSTALL2 = /(^([\w\-_[\]. ]+)((==|~=|>=|<=|>|<)((\d+!)?(\d)+(\.\d+)*(-?(a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?))?$)|(^git\+.*$)/
+
+  it.each(['36', '37'])('DWC 3.%s dependencies are accepted by DSF\'s pipInstall2.py', (gen) => {
+    for (const dep of stagedManifest(gen).sbcPythonDependencies) {
+      expect(dep).not.toContain(',')
+      expect(dep).toMatch(PIP_INSTALL2)
+    }
   })
 })

@@ -183,10 +183,18 @@ jobs:
               fail("dsfFiles is missing the daemon");
             }
             // An unpinned dsf-python installs the newest series, which cannot
-            // connect to an older DSF (IPC protocol check).
+            // connect to an older DSF (IPC protocol check). DSF's pipInstall2.py
+            // takes one comparator only and exits 5 on a comma.
+            const [major, minor] = process.env.EXPECTED_DWC_VERSION.split(".").map(Number);
+            const expectedPin = `dsf-python<${major}.${minor + 1}`;
             const dsfPython = (manifest.sbcPythonDependencies || []).find((dep) => dep.startsWith("dsf-python"));
-            if (!dsfPython || !dsfPython.includes(`>=${process.env.EXPECTED_DWC_VERSION}.`)) {
-              fail(`sbcPythonDependencies pins dsf-python as "${dsfPython}", expected the ${process.env.EXPECTED_DWC_VERSION} series`);
+            if (dsfPython !== expectedPin) {
+              fail(`sbcPythonDependencies pins dsf-python as "${dsfPython}", expected "${expectedPin}"`);
+            }
+            for (const dep of manifest.sbcPythonDependencies || []) {
+              if (dep.includes(",")) {
+                fail(`sbcPythonDependencies entry "${dep}" has a comma — DSF's pipInstall2.py exits with code 5`);
+              }
             }
             console.log(`dwcVersion=${manifest.dwcVersion}`);
             console.log(`dwcFiles=${(manifest.dwcFiles || []).join(", ")}`);

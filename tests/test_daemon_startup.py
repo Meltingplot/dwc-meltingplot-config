@@ -426,7 +426,7 @@ class TestMakeAsyncHandlerExceptionPath:
 
         # Create a mock http_conn with async methods
         http_conn = MagicMock()
-        request = SimpleNamespace(queries={}, body="")
+        request = SimpleNamespace(session_id=1, queries={}, body="")
         http_conn.read_request = AsyncMock(return_value=request)
         http_conn.send_response = AsyncMock()
 
@@ -451,7 +451,7 @@ class TestMakeAsyncHandlerExceptionPath:
         handler = daemon._make_async_handler(cmd, manager, ok_handler)
 
         http_conn = MagicMock()
-        request = SimpleNamespace(queries={"key": "val"}, body='{"data":1}')
+        request = SimpleNamespace(session_id=1, queries={"key": "val"}, body='{"data":1}')
         http_conn.read_request = AsyncMock(return_value=request)
         http_conn.send_response = AsyncMock()
 
@@ -478,7 +478,7 @@ class TestMakeAsyncHandlerExceptionPath:
         handler = daemon._make_async_handler(cmd, manager, file_handler)
 
         http_conn = MagicMock()
-        request = SimpleNamespace(queries={}, body="")
+        request = SimpleNamespace(session_id=1, queries={}, body="")
         http_conn.read_request = AsyncMock(return_value=request)
         http_conn.send_response = AsyncMock()
 
@@ -506,7 +506,7 @@ class TestMakeAsyncHandlerExceptionPath:
 
         http_conn = MagicMock()
         # Simulate request with None attributes
-        request = SimpleNamespace()  # no queries or body attrs
+        request = SimpleNamespace(session_id=1)  # no queries or body attrs
         http_conn.read_request = AsyncMock(return_value=request)
         http_conn.send_response = AsyncMock()
 
@@ -514,6 +514,66 @@ class TestMakeAsyncHandlerExceptionPath:
 
         assert received["body"] == ""
         assert received["queries"] == {}
+
+
+# --- _make_async_handler session enforcement ---
+
+
+class TestMakeAsyncHandlerSession:
+    """DSF forwards unauthenticated requests; the wrapper must reject them."""
+
+    @staticmethod
+    def _run(daemon, request):
+        called = []
+
+        def handler(cmd, manager, body, queries):
+            called.append(True)
+            return {"status": 200, "body": "{}", "contentType": "application/json"}
+
+        http_conn = MagicMock()
+        http_conn.read_request = AsyncMock(return_value=request)
+        http_conn.send_response = AsyncMock()
+        wrapped = daemon._make_async_handler(MagicMock(), MagicMock(), handler)
+        asyncio.get_event_loop().run_until_complete(wrapped(http_conn))
+        return called, http_conn.send_response.call_args[0]
+
+    @pytest.mark.parametrize("request_obj", [
+        SimpleNamespace(session_id=-1, queries={}, body=""),   # no / unknown key
+        SimpleNamespace(session_id=0, queries={}, body=""),    # never a stored session
+        SimpleNamespace(queries={}, body=""),                  # field absent
+        SimpleNamespace(session_id="1", queries={}, body=""),  # not an int
+    ])
+    def test_rejects_request_without_session(self, request_obj):
+        daemon = _import_daemon()
+        called, args = self._run(daemon, request_obj)
+
+        assert called == []
+        assert args[0] == 401
+        assert "session" in json.loads(args[1])["error"]
+        assert args[2] == daemon.HttpResponseType.JSON
+
+    def test_runs_handler_for_live_session(self):
+        daemon = _import_daemon()
+        called, args = self._run(daemon, SimpleNamespace(session_id=7, queries={}, body=""))
+
+        assert called == [True]
+        assert args[0] == 200
+
+    def test_every_registered_endpoint_is_guarded(self):
+        """register_endpoints hands DSF the wrapped handler for every endpoint."""
+        daemon = _import_daemon()
+        cmd = MagicMock()
+        endpoint = MagicMock()
+        cmd.add_http_endpoint.return_value = endpoint
+        daemon.register_endpoints(cmd, MagicMock())
+
+        assert endpoint.set_endpoint_handler.call_count == len(daemon.ENDPOINTS)
+        for (handler,), _ in endpoint.set_endpoint_handler.call_args_list:
+            http_conn = MagicMock()
+            http_conn.read_request = AsyncMock(return_value=SimpleNamespace(queries={}, body=""))
+            http_conn.send_response = AsyncMock()
+            asyncio.get_event_loop().run_until_complete(handler(http_conn))
+            assert http_conn.send_response.call_args[0][0] == 401
 
 
 # --- build_directory_map edge cases ---

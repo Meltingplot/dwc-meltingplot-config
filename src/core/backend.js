@@ -15,8 +15,9 @@
  * endpoint of this plugin returns 404 until the backend is started manually.
  */
 
-/** Identifier of this plugin as registered with DSF and DWC. */
-export const PLUGIN_ID = 'MeltingplotConfig'
+import { PLUGIN_ID, isBackendRunning } from './host'
+
+export { PLUGIN_ID, isBackendRunning }
 
 /** Default delay between attempts while waiting for the object model. */
 const DEFAULT_INTERVAL = 1500
@@ -25,51 +26,16 @@ const DEFAULT_INTERVAL = 1500
 const DEFAULT_MAX_ATTEMPTS = 20
 
 /**
- * Read this plugin's entry from the machine object model.
- *
- * In DWC 3.6 `state.plugins` is a Map keyed by plugin ID; tests may use a
- * plain object instead.
- *
- * @param {object} modelState State of the `machine/model` Vuex module
- * @returns {object|null} The Plugin object, or null if not present
- */
-export function getPluginEntry(modelState) {
-  const plugins = modelState && modelState.plugins
-  if (!plugins) {
-    return null
-  }
-  const plugin = plugins instanceof Map ? plugins.get(PLUGIN_ID) : plugins[PLUGIN_ID]
-  return plugin || null
-}
-
-/**
- * Whether the SBC backend process is running.
- *
- * DSF reports the process ID in `Plugin.pid`: -1 while the plugin is stopped,
- * 0 while it is shutting down, and the real PID while it runs.
- *
- * @param {object} modelState State of the `machine/model` Vuex module
- * @returns {boolean|null} true/false, or null when the state is not yet known
- */
-export function isBackendRunning(modelState) {
-  const plugin = getPluginEntry(modelState)
-  if (!plugin || typeof plugin.pid !== 'number') {
-    return null
-  }
-  return plugin.pid > 0
-}
-
-/**
  * Ask DSF to start the SBC part of this plugin.
  *
  * DSF persists the new execution state, so the backend also comes back up
  * automatically after the next SBC reboot.
  *
- * @param {object} store Root Vuex store
- * @returns {Promise<void>}
+ * @param {import('./host').Host} host DWC host adapter
+ * @returns {Promise<void>} Resolves once DSF accepted the command
  */
-export function startBackend(store) {
-  return Promise.resolve(store.dispatch('machine/startSbcPlugin', PLUGIN_ID))
+export function startBackend(host) {
+  return Promise.resolve(host.startSbcPlugin(PLUGIN_ID))
 }
 
 /**
@@ -77,21 +43,26 @@ export function startBackend(store) {
  *
  * The object model may not be populated at the time DWC loads plugin
  * resources, so this polls until the plugin entry shows up. It gives up
- * immediately when there is no machine module at all (e.g. in unit tests).
+ * immediately when there is no object model at all (e.g. in unit tests).
  *
- * @param {object} store Root Vuex store
+ * @param {import('./host').Host} host DWC host adapter
  * @param {object} [options] Polling options
  * @param {number} [options.interval] Delay between attempts in ms
  * @param {number} [options.maxAttempts] Attempts before giving up
  * @returns {Promise<boolean>} Whether a start was issued
  */
-export function ensureBackendRunning(store, options = {}) {
+export function ensureBackendRunning(host, options = {}) {
   const interval = options.interval || DEFAULT_INTERVAL
   const maxAttempts = options.maxAttempts || DEFAULT_MAX_ATTEMPTS
 
-  const machine = store && store.state && store.state.machine
-  if (!machine || !machine.model) {
-    // No machine module — nothing to inspect and nothing to start
+  let initialModel = null
+  try {
+    initialModel = host && host.model()
+  } catch {
+    initialModel = null
+  }
+  if (!initialModel) {
+    // No object model — nothing to inspect and nothing to start
     return Promise.resolve(false)
   }
 
@@ -103,8 +74,8 @@ export function ensureBackendRunning(store, options = {}) {
 
       let running = null
       try {
-        running = isBackendRunning(store.state.machine.model)
-      } catch (e) {
+        running = isBackendRunning(host.model())
+      } catch {
         running = null
       }
 
@@ -114,7 +85,7 @@ export function ensureBackendRunning(store, options = {}) {
       }
 
       if (running === false) {
-        startBackend(store).then(
+        startBackend(host).then(
           () => resolve(true),
           err => {
             // eslint-disable-next-line no-console

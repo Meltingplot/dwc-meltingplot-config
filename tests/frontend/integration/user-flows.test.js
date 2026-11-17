@@ -1,20 +1,27 @@
 import { mount, createLocalVue } from '@vue/test-utils'
 import Vuex from 'vuex'
 import Vuetify from 'vuetify'
-import MeltingplotConfig from '../../../src/MeltingplotConfig.vue'
+import MeltingplotConfig from '../../../src/ui36/MeltingplotConfig.vue'
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 
 const localVue = createLocalVue()
 localVue.use(Vuex)
 
 function createStore(pluginData = {}) {
+  // Mirrors DWC's store: a namespaced `machine` module with a `model` child,
+  // so `store.state.machine.model` resolves exactly as it does in DWC.
   return new Vuex.Store({
     modules: {
-      'machine/model': {
+      machine: {
         namespaced: true,
-        state: {
-          plugins: {
-            MeltingplotConfig: { data: pluginData }
+        modules: {
+          model: {
+            namespaced: true,
+            state: {
+              plugins: {
+                MeltingplotConfig: { data: pluginData }
+              }
+            }
           }
         }
       }
@@ -365,7 +372,8 @@ describe('User flow: Backup and restore', () => {
     await wrapper.vm.downloadBackup('abc123')
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/backupDownload?hash=abc123')
+      expect.stringContaining('/backupDownload?hash=abc123'),
+      expect.anything()
     )
     expect(clickSpy).toHaveBeenCalled()
 

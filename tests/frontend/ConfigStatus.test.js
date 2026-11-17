@@ -1,5 +1,5 @@
 import { shallowMount } from '@vue/test-utils'
-import ConfigStatus from '../../src/components/ConfigStatus.vue'
+import ConfigStatus from '../../src/ui36/components/ConfigStatus.vue'
 
 function mountComponent(propsData = {}) {
   return shallowMount(ConfigStatus, {

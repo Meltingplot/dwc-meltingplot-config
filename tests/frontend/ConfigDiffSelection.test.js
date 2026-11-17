@@ -1,6 +1,6 @@
 import { shallowMount, mount } from '@vue/test-utils'
 import Vuetify from 'vuetify'
-import ConfigDiff from '../../src/components/ConfigDiff.vue'
+import ConfigDiff from '../../src/ui36/components/ConfigDiff.vue'
 
 function detailHunks(count, selected = true) {
   return Array.from({ length: count }, (_, i) => ({

@@ -531,6 +531,58 @@ class TestIsProtected:
         """RRF's own M500 override file."""
         assert is_protected("sys/config-override.g") is True
 
+    # --- chx350-config 3.7 layout: whole directories ---
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "sys/overrides/global-override.g",
+            "sys/overrides/machine-override",
+            "sys/overrides/dsf-config-override.g",
+            "sys/overrides/printer-name.g",
+            "sys/overrides/anything-new.g",
+        ],
+    )
+    def test_overrides_directory(self, path):
+        """Every file in sys/overrides/ is operator-owned."""
+        assert is_protected(path) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "sys/generated/nozzle0.g",
+            "sys/generated/spool1.g",
+            "sys/generated/bed-surface.g",
+            "sys/generated/last-filament-temp.g",
+        ],
+    )
+    def test_generated_directory(self, path):
+        """Every file in sys/generated/ is written by the machine."""
+        assert is_protected(path) is True
+
+    def test_overrides_nested_deeper_not_protected(self):
+        assert is_protected("sys/overrides/sub/file.g") is False
+        assert is_protected("sys/generated/sub/file.g") is False
+
+    def test_overrides_directory_itself_not_protected(self):
+        assert is_protected("sys/overrides/") is False
+        assert is_protected("sys/overrides") is False
+
+    def test_similar_directory_names_not_protected(self):
+        assert is_protected("sys/overrides-old/file.g") is False
+        assert is_protected("sys/meltingplot/overrides/file.g") is False
+
+    def test_filament_material(self):
+        assert is_protected("filaments/PLA/material.g") is True
+
+    def test_filament_nozzle_files(self):
+        assert is_protected("filaments/PLA/nozzle-2.85-0.40.g") is True
+        assert is_protected("filaments/PLA 0.6 mm/nozzle-0.60.g") is True
+
+    def test_filament_calibration_files_not_protected(self):
+        """config-auto-* files are calibration output, never shipped."""
+        assert is_protected("filaments/PLA/config-auto-esteps-2.85-0.40.g") is False
+
     def test_config_override_outside_filaments_not_protected(self):
         assert is_protected("macros/PLA/config-override.g") is False
 

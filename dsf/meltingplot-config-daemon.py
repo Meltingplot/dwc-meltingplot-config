@@ -82,7 +82,11 @@ def _patch_board_state():
     ValueError for anything unlisted — and that crashes get_object_model()
     entirely, losing firmware detection and the directory mapping.
 
-    Still missing in dsf-python 3.7, so this patch is load-bearing on both.
+    Missing in dsf-python 3.6 and the 3.7 betas; the released 3.7.0.post1
+    finally lists it, and also moved `state` from Board to ExpansionBoard (the
+    mainboard has no state). The setter is therefore replaced on whichever
+    class defines it — assuming Board crashed 3.6 printers that had pulled
+    3.7.0.post1 from PyPI.
 
     Two parts: replace the enum, and replace the setter. On 3.6 the setter
     reads the module-level name, so swapping the enum is what fixes it; on 3.7
@@ -93,7 +97,20 @@ def _patch_board_state():
     from enum import Enum
 
     import dsf.object_model.boards.boards as boards_module
-    from dsf.object_model.boards.boards import Board
+
+    owner = next(
+        (
+            cls
+            for cls in (
+                getattr(boards_module, "ExpansionBoard", None),
+                getattr(boards_module, "Board", None),
+            )
+            if cls is not None and isinstance(cls.__dict__.get("state"), property)
+        ),
+        None,
+    )
+    if owner is None:
+        raise AttributeError("no Board class defines a 'state' property")
 
     class PatchedBoardState(str, Enum):
         """Replacement BoardState that includes all known DSF states."""
@@ -118,7 +135,7 @@ def _patch_board_state():
         except (ValueError, KeyError):
             self._state = PatchedBoardState.unknown
 
-    Board.state = Board.state.setter(safe_state_setter)
+    owner.state = owner.__dict__["state"].setter(safe_state_setter)
 
 
 def _patch_network_interface_type():

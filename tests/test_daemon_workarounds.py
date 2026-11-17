@@ -242,6 +242,51 @@ class TestBoardStateWorkaround:
         assert dsf_stubs.boards_module.BoardState("timedOut") == "timedOut"
 
 
+class TestBoardStateOnExpansionBoard:
+    """dsf-python 3.7.0.post1 moved `state` from Board to ExpansionBoard.
+
+    The released library defines no `state` on Board at all, so a patch that
+    reached for `Board.state` raised AttributeError — which, before the
+    workarounds were made non-fatal, killed the daemon at import on DSF 3.6.3
+    printers that had pulled 3.7.0.post1 from PyPI.
+    """
+
+    @pytest.fixture
+    def post1_layout(self, dsf_stubs):
+        boards_mod = dsf_stubs.boards_module
+        original_state = dsf_stubs.Board.__dict__["state"]
+
+        class Board:  # the mainboard has no state in 3.7.0.post1
+            pass
+
+        class ExpansionBoard(Board):
+            state = original_state
+
+        boards_mod.Board = Board
+        boards_mod.ExpansionBoard = ExpansionBoard
+        return types.SimpleNamespace(Board=Board, ExpansionBoard=ExpansionBoard)
+
+    def test_patches_the_expansion_board(self, post1_layout, capsys):
+        _import_daemon()
+        board = post1_layout.ExpansionBoard()
+        board.state = "somethingNewInDsf4"
+        assert board.state == "unknown"
+        assert "BoardState" not in capsys.readouterr().err
+
+    def test_leaves_the_mainboard_without_state(self, post1_layout):
+        _import_daemon()
+        assert "state" not in post1_layout.Board.__dict__
+
+    def test_no_state_anywhere_is_reported_not_fatal(self, dsf_stubs, capsys):
+        class Board:
+            pass
+
+        dsf_stubs.boards_module.Board = Board
+        _import_daemon()
+        err = capsys.readouterr().err
+        assert "BoardState" in err and "AttributeError" in err
+
+
 class TestNetworkInterfaceTypeWorkaround:
     """The interface type must cover both libraries' vocabularies."""
 

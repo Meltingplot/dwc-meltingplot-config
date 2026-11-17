@@ -59,7 +59,7 @@ This repository builds **two packages from one source tree**: a DWC 3.6 one and 
 one. They are different framework stacks, so a package built for one does not load on the
 other.
 
-| | DWC 3.6 (`v3.6-dev`, 3.6.3) | DWC 3.7 (`v3.7-dev`, 3.7.0-rc.1) |
+| | DWC 3.6 (`v3.6.4`) | DWC 3.7 (`v3.7-dev`, 3.7.0-rc.1) |
 |---|---|---|
 | Framework | Vue **2.7** | Vue **3.5** |
 | UI kit | Vuetify **2.7** | Vuetify **4** |
@@ -79,6 +79,7 @@ other.
 - **Backend:** Python 3 (runs as DSF SBC plugin process), one tree for both packages
   - **Source:** `v3.6-dev` branch of [Duet3D/DuetSoftwareFramework](https://github.com/Duet3D/DuetSoftwareFramework/tree/v3.6-dev)
 - **DSF communication:** `dsf-python` library v3.6-dev (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
+  - **Pinned per package by `scripts/stage.js`:** `dsf-python>=3.6.0,<3.7` for the 3.6 package, `>=3.7.0,<3.8` for 3.7. dsf-python refuses a DSF whose IPC protocol is older than its own (3.7.x needs 13; DSF 3.6.x, including 3.6.4, speaks 12), so an unpinned `dsf-python` — which PyPI resolves to 3.7.0.post1 — cannot connect to a 3.6 printer. `plugin.json` in the repo keeps the bare name; only the staged manifest carries the pin, and CI checks it.
   - **Source:** `v3.6-dev` branch of [Duet3D/dsf-python](https://github.com/Duet3D/dsf-python/tree/v3.6-dev)
   - **ObjectModel API:** uses **attribute access** with **snake_case** names (not dict `.get()`). Use `getattr(obj, "attr", default)` for safe access.
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`
@@ -156,8 +157,10 @@ A wrong *type* (a number rather than a string) still raises `TypeError` on purpo
 sends JSON, so that would mean the library changed how it calls the setter, which is worth
 surfacing rather than papering over.
 
-**On 3.7:** `timedOut` is **still missing** upstream, so this patch is load-bearing on both
-generations.
+**On 3.7:** missing in the betas; the released **3.7.0.post1** lists it but moved `state`
+from `Board` to `ExpansionBoard` (the mainboard has none). The patch therefore replaces the
+setter on whichever class defines `state` — reaching for `Board.state` crashed 3.6.3
+printers that had pulled 3.7.0.post1 (`AttributeError: type object 'Board' has no attribute 'state'`).
 
 ### 6. NetworkInterfaceType enum missing `ethernet` value
 
@@ -189,7 +192,7 @@ release gate for the 3.7 package — the analysis above is source-level only.
 One DuetWebControl checkout per generation, each with `npm install` done:
 
 ```bash
-git clone -b v3.6-dev https://github.com/Duet3D/DuetWebControl.git dwc36 && (cd dwc36 && npm install)
+git clone -b v3.6.4 https://github.com/Duet3D/DuetWebControl.git dwc36 && (cd dwc36 && npm install)
 git clone -b v3.7-dev https://github.com/Duet3D/DuetWebControl.git dwc37 && (cd dwc37 && npm install)
 
 DWC36_DIR=$PWD/dwc36 node scripts/build.js 36   # dist/MeltingplotConfig-<version>-dwc36.zip
@@ -345,7 +348,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml`:
 
 | `gen` | DWC ref | Node | Artifact |
 |---|---|---|---|
-| `36` | `v3.6-dev` | 18 | `MeltingplotConfig-plugin-dwc36` |
+| `36` | `v3.6.4` | 18 | `MeltingplotConfig-plugin-dwc36` |
 | `37` | `v3.7-dev` | 22 | `MeltingplotConfig-plugin-dwc37` |
 
 Each leg verifies the packaged manifest: the right `dwcVersion`, a populated `dwcFiles`

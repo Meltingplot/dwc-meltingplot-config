@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       dwc36_ref:
-        description: 'DuetWebControl ref for the 3.6 package (default: v3.6-dev)'
+        description: 'DuetWebControl ref for the 3.6 package (default: v3.6.4)'
         required: false
         default: ''
       dwc37_ref:
@@ -99,7 +99,7 @@ jobs:
           # DWC 3.6: Vue 2.7 / Vuetify 2.7, vue-cli + webpack. Node 18 is proven.
           - gen: "36"
             dwc_major: "3.6"
-            default_ref: v3.6-dev
+            default_ref: v3.6.4
             node: "18"
           # DWC 3.7: Vue 3.5 / Vuetify 4, Vite 8 + vue-tsc — needs Node 22+.
           # The type check runs inside build-plugin-pkg and fails this leg on
@@ -181,6 +181,12 @@ jobs:
             }
             if (!(manifest.dsfFiles || []).includes("meltingplot-config-daemon.py")) {
               fail("dsfFiles is missing the daemon");
+            }
+            // An unpinned dsf-python installs the newest series, which cannot
+            // connect to an older DSF (IPC protocol check).
+            const dsfPython = (manifest.sbcPythonDependencies || []).find((dep) => dep.startsWith("dsf-python"));
+            if (!dsfPython || !dsfPython.includes(`>=${process.env.EXPECTED_DWC_VERSION}.`)) {
+              fail(`sbcPythonDependencies pins dsf-python as "${dsfPython}", expected the ${process.env.EXPECTED_DWC_VERSION} series`);
             }
             console.log(`dwcVersion=${manifest.dwcVersion}`);
             console.log(`dwcFiles=${(manifest.dwcFiles || []).join(", ")}`);

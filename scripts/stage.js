@@ -46,6 +46,36 @@ const SRC_EXCLUDES = new Set(['routes.js', 'store.js', '__mocks__']);
 const ARTEFACTS = /^(__pycache__|\.pytest_cache|node_modules|\.DS_Store)$/;
 
 /**
+ * The dsf-python release series each package installs into the plugin venv.
+ *
+ * dsf-python refuses to talk to a DSF whose IPC protocol is older than its own
+ * (`ServerInitMessage.is_compatible`): 3.7.x needs protocol 13, DSF 3.6 speaks
+ * 12. An unpinned `dsf-python` gets whatever PyPI serves newest, so once 3.7
+ * was published every fresh 3.6 install pulled a library that cannot connect —
+ * and that also changed the object-model classes our workarounds patch.
+ * Each package therefore pins the series matching the DSF it targets.
+ */
+const DSF_PYTHON = {
+    36: 'dsf-python>=3.6.0,<3.7',
+    37: 'dsf-python>=3.7.0,<3.8'
+};
+
+/**
+ * The manifest for one generation: `plugin.json` with the dsf-python
+ * dependency pinned to that generation's series.
+ *
+ * @param {string} gen `36` or `37`
+ * @returns {object} Manifest
+ */
+function stagedManifest(gen) {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'));
+    manifest.sbcPythonDependencies = (manifest.sbcPythonDependencies || [])
+        .filter(dep => !/^dsf-python\b/.test(dep))
+        .concat(DSF_PYTHON[gen]);
+    return manifest;
+}
+
+/**
  * Copy a directory recursively, skipping build artefacts.
  *
  * @param {string} from Source directory
@@ -110,7 +140,10 @@ function stage(gen, outDir) {
     // it from the directory they are given, not from the repository.
     copyDir(path.join(ROOT, 'dsf'), path.join(target, 'dsf'));
 
-    fs.copyFileSync(path.join(ROOT, 'plugin.json'), path.join(target, 'plugin.json'));
+    fs.writeFileSync(
+        path.join(target, 'plugin.json'),
+        JSON.stringify(stagedManifest(gen), null, 2) + '\n'
+    );
 
     // Deliberately no package.json: DWC 3.7's builder runs `npm install` inside
     // the plugin directory when one lists dependencies it cannot resolve, and
@@ -126,7 +159,7 @@ function stage(gen, outDir) {
     return target;
 }
 
-module.exports = { stage, GENERATIONS };
+module.exports = { stage, stagedManifest, GENERATIONS, DSF_PYTHON };
 
 if (require.main === module) {
     const [gen, outDir] = process.argv.slice(2);

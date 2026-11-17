@@ -43,7 +43,8 @@ if (!GENERATIONS.includes(gen)) {
     process.exit(1);
 }
 const stageDir = stage(gen, path.join(ROOT, '.build', `zip-dwc${gen}`));
-const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'utf8'));
+// The staged manifest, not the repository's: staging pins dsf-python per generation.
+const pluginJson = JSON.parse(fs.readFileSync(path.join(stageDir, 'plugin.json'), 'utf8'));
 const pluginId = pluginJson.id;
 
 // Compute version from git without modifying source files

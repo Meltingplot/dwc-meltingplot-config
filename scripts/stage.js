@@ -54,10 +54,16 @@ const ARTEFACTS = /^(__pycache__|\.pytest_cache|node_modules|\.DS_Store)$/;
  * was published every fresh 3.6 install pulled a library that cannot connect —
  * and that also changed the object-model classes our workarounds patch.
  * Each package therefore pins the series matching the DSF it targets.
+ *
+ * Only an upper bound, and only one comparator: DSF installs these through
+ * `/opt/dsf/bin/pipInstall2.py`, which exits with code 5
+ * (UNSUPPORTED_CONDITIONAL) on any entry containing a comma, so a range such
+ * as `>=3.6.0,<3.7` makes the plugin uninstallable. pip picks the highest
+ * release below the bound — the newest of the intended series.
  */
 const DSF_PYTHON = {
-    36: 'dsf-python>=3.6.0,<3.7',
-    37: 'dsf-python>=3.7.0,<3.8'
+    36: 'dsf-python<3.7',
+    37: 'dsf-python<3.8'
 };
 
 /**

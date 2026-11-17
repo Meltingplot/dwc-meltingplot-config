@@ -79,7 +79,7 @@ other.
 - **Backend:** Python 3 (runs as DSF SBC plugin process), one tree for both packages
   - **Source:** `v3.6-dev` branch of [Duet3D/DuetSoftwareFramework](https://github.com/Duet3D/DuetSoftwareFramework/tree/v3.6-dev)
 - **DSF communication:** `dsf-python` library v3.6-dev (Unix socket, installed via `sbcPythonDependencies` in plugin venv)
-  - **Pinned per package by `scripts/stage.js`:** `dsf-python>=3.6.0,<3.7` for the 3.6 package, `>=3.7.0,<3.8` for 3.7. dsf-python refuses a DSF whose IPC protocol is older than its own (3.7.x needs 13; DSF 3.6.x, including 3.6.4, speaks 12), so an unpinned `dsf-python` — which PyPI resolves to 3.7.0.post1 — cannot connect to a 3.6 printer. `plugin.json` in the repo keeps the bare name; only the staged manifest carries the pin, and CI checks it.
+  - **Pinned per package by `scripts/stage.js`:** `dsf-python<3.7` for the 3.6 package, `dsf-python<3.8` for 3.7. **One comparator only, no comma:** DSF installs these via `/opt/dsf/bin/pipInstall2.py`, which exits with code 5 (`UNSUPPORTED_CONDITIONAL`) on a comma — `>=3.6.0,<3.7` made v1.4.0 uninstallable. dsf-python refuses a DSF whose IPC protocol is older than its own (3.7.x needs 13; DSF 3.6.x, including 3.6.4, speaks 12), so an unpinned `dsf-python` — which PyPI resolves to 3.7.0.post1 — cannot connect to a 3.6 printer. `plugin.json` in the repo keeps the bare name; only the staged manifest carries the pin, and CI checks it.
   - **Source:** `v3.6-dev` branch of [Duet3D/dsf-python](https://github.com/Duet3D/dsf-python/tree/v3.6-dev)
   - **ObjectModel API:** uses **attribute access** with **snake_case** names (not dict `.get()`). Use `getattr(obj, "attr", default)` for safe access.
   - `model.boards` → `List[Board]`; `board.firmware_version` → `str`

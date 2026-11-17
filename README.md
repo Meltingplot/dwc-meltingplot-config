@@ -40,7 +40,7 @@ same source tree. The DSF backend is plain Python (no build step).
 
 ```bash
 # One checkout per generation, each with npm install done
-git clone -b v3.6-dev https://github.com/Duet3D/DuetWebControl.git dwc36 && (cd dwc36 && npm install)
+git clone -b v3.6.4 https://github.com/Duet3D/DuetWebControl.git dwc36 && (cd dwc36 && npm install)
 git clone -b v3.7-dev https://github.com/Duet3D/DuetWebControl.git dwc37 && (cd dwc37 && npm install)
 
 # Build either package
@@ -349,7 +349,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml`:
 4. **Build** — a two-leg matrix, one package per DWC generation:
    | Leg | DuetWebControl | Node | Artifact |
    |---|---|---|---|
-   | `36` | `v3.6-dev` | 18 | `MeltingplotConfig-plugin-dwc36` |
+   | `36` | `v3.6.4` | 18 | `MeltingplotConfig-plugin-dwc36` |
    | `37` | `v3.7-dev` | 22 | `MeltingplotConfig-plugin-dwc37` |
 
    Each leg stages its own tree, runs DWC's `build-plugin-pkg` and checks the packaged
@@ -396,7 +396,7 @@ Both build stages temporarily run `scripts/version.js --write` (as CI does) and 
 `plugin.json` / `package.json` afterwards, so the working tree stays clean. The resulting
 ZIPs are copied to `.ci-local/dist/`.
 
-Overrides: `DWC36_REF` / `DWC37_REF` select the DuetWebControl refs (defaults `v3.6-dev`
+Overrides: `DWC36_REF` / `DWC37_REF` select the DuetWebControl refs (defaults `v3.6.4`
 and `v3.7-dev`), `PYTHON=<interpreter>` selects the interpreter used for the venv.
 
 ## License

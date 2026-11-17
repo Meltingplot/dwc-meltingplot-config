@@ -27,7 +27,7 @@
 # is older, build37 runs inside a node:22 Docker container instead.
 #
 # Env overrides:
-#   DWC36_REF=v3.6-dev  DuetWebControl ref for the 3.6 package
+#   DWC36_REF=v3.6.4    DuetWebControl ref for the 3.6 package
 #   DWC37_REF=v3.7-dev  DuetWebControl ref for the 3.7 package
 #   PYTHON=python3      interpreter used to create the venv
 
@@ -38,7 +38,7 @@ WORK="$ROOT/.ci-local"
 VENV="$WORK/venv"
 DWC36_DIR="$WORK/DuetWebControl"
 DWC37_DIR="$WORK/DuetWebControl-3.7"
-DWC36_REF="${DWC36_REF:-v3.6-dev}"
+DWC36_REF="${DWC36_REF:-v3.6.4}"
 DWC37_REF="${DWC37_REF:-v3.7-dev}"
 PYTHON="${PYTHON:-python3}"
 PY_MATRIX=(3.10 3.11 3.12)

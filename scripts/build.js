@@ -7,7 +7,7 @@
  *   DWC37_DIR=~/src/DuetWebControl-3.7 node scripts/build.js 37
  *
  * The checkout must be the matching branch with `npm install` already done
- * (`v3.6-dev` for 36, `v3.7-dev` for 37; the 3.7 toolchain needs Node 22+).
+ * (`v3.6.4` for 36, `v3.7-dev` for 37; the 3.7 toolchain needs Node 22+).
  *
  * Both legs use `build-plugin-pkg`, not `build-plugin`: DWC 3.7's loader takes
  * the JS/CSS list from `manifest.dwcFiles`, which only the `-pkg` script fills
@@ -30,7 +30,7 @@ const PLUGIN_ID = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugin.json'), 'ut
 
 /** Per-generation build settings. */
 const LEGS = {
-    36: { env: 'DWC36_DIR', branch: 'v3.6-dev' },
+    36: { env: 'DWC36_DIR', branch: 'v3.6.4' },
     37: { env: 'DWC37_DIR', branch: 'v3.7-dev' }
 };
 

@@ -245,3 +245,17 @@ describe.each(GENERATIONS)('Plugin ZIP structure (DWC 3.%s)', (gen) => {
     expect(zipEntries.filter(e => e.endsWith('package.json'))).toEqual([])
   })
 })
+
+describe('Staged manifest pins dsf-python per generation', () => {
+  // dsf-python refuses a DSF with an older IPC protocol: 3.7.x needs 13,
+  // DSF 3.6 speaks 12. Unpinned, PyPI serves 3.7 to 3.6 printers.
+  const { stagedManifest } = require('../../../scripts/stage')
+
+  it.each([
+    ['36', 'dsf-python>=3.6.0,<3.7'],
+    ['37', 'dsf-python>=3.7.0,<3.8']
+  ])('DWC 3.%s package', (gen, expected) => {
+    const deps = stagedManifest(gen).sbcPythonDependencies
+    expect(deps.filter(dep => dep.startsWith('dsf-python'))).toEqual([expected])
+  })
+})

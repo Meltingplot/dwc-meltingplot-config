@@ -207,6 +207,12 @@ jobs:
             if (!(manifest.dsfFiles || []).includes("meltingplot-config-daemon.py")) {
               fail("dsfFiles is missing the daemon");
             }
+            // An unpinned dsf-python installs the newest series, which cannot
+            // connect to an older DSF (IPC protocol check).
+            const dsfPython = (manifest.sbcPythonDependencies || []).find((dep) => dep.startsWith("dsf-python"));
+            if (!dsfPython || !dsfPython.includes(`>=${process.env.EXPECTED_DWC_VERSION}.`)) {
+              fail(`sbcPythonDependencies pins dsf-python as "${dsfPython}", expected the ${process.env.EXPECTED_DWC_VERSION} series`);
+            }
             console.log(`dwcVersion=${manifest.dwcVersion}`);
             console.log(`dwcFiles=${(manifest.dwcFiles || []).join(", ")}`);
           });
